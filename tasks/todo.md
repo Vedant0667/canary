@@ -1,40 +1,50 @@
-# CareLoop Demo — Build Plan
+# Cardinal (was CareLoop) — Redesign + De-hardcode + Rename
 
-Source of truth: `outputs/careloop-demo-prd.md` + `careloop-scoring-spec.md`.
-Implementation contract: `docs/superpowers/specs/2026-06-05-careloop-demo-design.md`.
+Source of truth: PRD + scoring-spec in `docs/`. New design system: `docs/design-system.md`
+(from `~/Downloads/-design-system.pdf`). Judging rubric: `docs/judging-criteria.md`.
 
-## Phase 0 — Foundation (DONE, by orchestrator)
-- [x] Scaffold Vite + React + TS at ~/careloop, deps installed (anthropic SDK, vitest)
-- [x] git init, scaffolding installed, private GitHub repo (Vedant0667/careloop)
-- [x] Shared contract: `src/types.ts`
-- [x] Design tokens: `src/styles/tokens.css`, fonts in `index.html`
-- [x] Shared primitives: `src/components/primitives.tsx`
-- [x] Design/architecture doc with file-ownership map
-- [x] Stub `App.tsx` so foundation compiles; initial commit
+## Why this round
+Prep meeting feedback:
+1. Judges will run the demo "through AI" to confirm it actually works and isn't fully
+   hardcoded. Some canned data is fine; the AI + engine path must be genuinely live.
+2. Rename the product **CareLoop → Cardinal**.
+3. Redesign around the provided design system (Cream/Ink/Stone/Slate; Recoleta→Fraunces
+   display, Suisse→Geist body, Geist Mono; no italics; cream bg).
+4. Still: superpowers spec + subagents, impeccable for design, todo + lessons.
 
-## Phase 1 — Brainstorm (subagents) — DONE
-- [x] 2 brainstorm agents (risk + polish lens) on the locked spec
+## Reality check (good news)
+- Scoring engine = genuine deterministic rules engine (computes from inputs, not a lookup). KEEP.
+- Extraction = real Anthropic tool-use call when `VITE_ANTHROPIC_API_KEY` set; silent cache fallback.
+- Palette in tokens.css already matches the design system. Main visual gap = fonts (system-ui → Geist).
 
-## Phase 2 — Execute (parallel subagents, disjoint files) — DONE
-- [x] engine: `scoring.ts` + `scoring.test.ts` (Mrs R=86, Mr D=Watch, Ms K=Admit green)
-- [x] data: 3 packets (.md) + 3 cached extractions (.json) + `packets.ts` + `monitoring.ts`
-- [x] extraction: `lib/extraction.ts` (live claude-sonnet-4-6 + 6s timeout → cache)
-- [x] view-triage: `TriageView.tsx` (hero screen)
-- [x] view-handoff: `HandoffView.tsx` (split-screen FHIR bundle transfer)
-- [x] view-dashboard: `DashboardView.tsx` (day stepper, day-4 yellow moment)
-- [x] integration: `App.tsx` wires state + engine + views + stepper + F-key
+## Plan
 
-## Phase 3 — Check (parallel subagents) — DONE
-- [x] Engine correctness vs spec §10–§12 (23/23 tests pass)
-- [x] Acceptance checklist (PRD §8) + build/typecheck (tsc + build clean)
-- [x] Design-system compliance vs PRD §6 (iron rules) — green banner → slate fixed
-- [x] Numbers trace to contributions; no contradicting hardcoded copy
+### Phase 0 — Foundation (orchestrator, blocking) [~]
+- [x] Install @fontsource Fraunces(variable)/Geist/Geist-mono
+- [ ] `src/styles/fonts.css` (latin subsets) + import in main.tsx
+- [ ] tokens.css: body font → Geist, display Fraunces 500, header → Cardinal (palette already on-system)
+- [ ] index.html: title/meta → Cardinal, drop Google Fonts CDN (now bundled)
+- [ ] package.json name → cardinal
+- [ ] Capture design-system.md + judging-criteria.md into docs/
 
-## Phase 4 — Fix (parallel subagents) — DONE
-- [x] Hand-off success banner moved off green tier palette → neutral slate
+### Phase 1 — De-hardcode core (orchestrator, blocking)
+- [ ] extraction.ts: add `extractText(rawText, {requireLive})` — live-only path, no silent cache, honest errors
+- [ ] App.tsx: custom-packet input state + `onExtractCustom`; honest live/cache provenance; rename brand
+- [ ] Provenance surfaced: which fields came from the note + live vs cache badge that tells the truth
 
-## Phase 5 — Finalize (orchestrator) — DONE
-- [x] `npm test` 23/23 green, `npm run build` clean, dev server smoke (all modules 200)
-- [x] Commit + push; summary written
+### Phase 2 — Redesign views (parallel subagents, disjoint files)
+- [ ] TriageView: apply design system + wire the "paste a referral note → live extract → score" affordance
+- [ ] HandoffView: apply design system
+- [ ] DashboardView: apply design system
+- [ ] primitives.tsx restyle (orchestrator, shared — done before fan-out)
 
-## Status: READY. `npm run dev` → demo-ready in one command. Press `F` for offline mode.
+### Phase 3 — Judging alignment (subagent)
+- [ ] JUDGING.md: map demo capabilities → Round 1 rubric (Functionality/Problem Alignment/UX) + beyond
+
+### Phase 4 — Check (parallel subagents)
+- [ ] Build + typecheck + tests green
+- [ ] Anti-hardcode audit: prove arbitrary input flows through real AI + real engine
+- [ ] Design-system compliance (fonts, color, no italics, craft)
+
+### Phase 5 — Fix + finalize (orchestrator)
+- [ ] Resolve check findings, screenshot-verify, commit + push, update memory + lessons

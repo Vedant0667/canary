@@ -1,20 +1,22 @@
-/* CareLoop design tokens — condensed from 08-design.md / PRD §6. Follow EXACTLY.
+/* Cardinal design tokens — design system: Cream / Ink / Stone / Slate.
  * Iron rules:
  *  - Any color other than slate/neutral MUST encode a clinical tier.
  *  - Accept / Override always equal weight.
  *  - Tier is always color + icon + word (a11y).
- *  - No shadows, no gradients. 0.5px borders. Weights 400/500 only. Sentence case.
+ *  - No shadows, no gradients. 0.5px borders. No italics anywhere.
+ *  - Cream background as default (pure white reads too clinical).
+ *  - Display = Fraunces (Recoleta stand-in), Body = Geist, Mono = Geist Mono.
  */
 
 :root {
-  /* Neutral palette */
-  --page: #f4efe6; /* cream */
-  --card: #fbf8f1;
+  /* Neutral palette (design system §01) */
+  --page: #f4efe6; /* Cream — background */
+  --card: #fbf8f1; /* raised surface (warm off-white, not pure white) */
   --border: #e0d6c0;
-  --ink: #1a1714; /* text */
-  --muted: #6b635a;
+  --ink: #1a1714; /* Ink — text · solid */
+  --muted: #6b635a; /* Stone — muted text */
 
-  /* Sole accent — slate */
+  /* Co-accent — Slate (the sole cool accent; design system §01) */
   --slate: #4f6e91;
   --slate-fill: #eef1f5;
   --slate-chip: #e1e7f0;
@@ -28,9 +30,10 @@
   --admit-text: #a8553d; /* red */
   --admit-bg: #ebd7ce;
 
-  /* Type */
-  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
-  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Type (design system §02). Display = Fraunces variable (Recoleta stand-in),
+   * Body = Geist (Suisse stand-in), Mono = Geist Mono. No italics anywhere. */
+  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+  --font-body: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', SFMono-Regular, Menlo,
     Consolas, monospace;
 
@@ -87,8 +90,12 @@ body {
 
 .display {
   font-family: var(--font-display);
-  font-weight: 400;
-  letter-spacing: -0.01em;
+  font-weight: 500; /* design system: Recoleta/Fraunces display weight 500 */
+  font-optical-sizing: auto;
+  /* soft 100, upright, slight WONK off — warm but composed */
+  font-variation-settings: 'SOFT' 100, 'WONK' 0;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
 }
 
 /* Reusable neutral card. */

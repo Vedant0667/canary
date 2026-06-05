@@ -1,4 +1,4 @@
-// Shared UI primitives that encode CareLoop's iron design rules (PRD §6).
+// Shared UI primitives that encode Cardinal's iron design rules (PRD §6).
 // Centralized so every view renders tiers identically and accessibly:
 // a tier is ALWAYS color + icon + word. Consume these; do not re-implement.
 
@@ -95,7 +95,7 @@ export function StatusChip({ status }: { status: SignalStatus }) {
 }
 
 // --- Threshold ladder -------------------------------------------------------
-// The signature CareLoop component. Renders a signal's in / borderline / out
+// The signature Cardinal component. Renders a signal's in / borderline / out
 // thresholds as three zones; the patient's value sits in its zone, tinted with
 // the matching tier. Makes "why this score" inspectable and proves, at a glance,
 // that no individual threshold was breached.

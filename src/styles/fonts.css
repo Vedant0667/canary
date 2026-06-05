@@ -1,0 +1,20 @@
+/* Cardinal — bundled webfonts (no network dependency at runtime).
+ *
+ * Per the design system:
+ *   Display  Recoleta 500           → Fraunces (variable, soft) as the licensed-free stand-in
+ *   Body     Suisse Int'l R/Medium  → Geist 400/500
+ *   Mono     Geist Mono R/Medium    → Geist Mono 400/500
+ * Latin subsets only, to keep the bundle lean. No italics anywhere (design note 03).
+ */
+
+/* Display — Fraunces variable (opsz + wght + SOFT + WONK axes; design note: soft 100). */
+@import '@fontsource-variable/fraunces/full.css';
+
+/* Body — Geist. */
+@import '@fontsource/geist/latin-400.css';
+@import '@fontsource/geist/latin-500.css';
+@import '@fontsource/geist/latin-600.css';
+
+/* Mono — Geist Mono. */
+@import '@fontsource/geist-mono/latin-400.css';
+@import '@fontsource/geist-mono/latin-500.css';

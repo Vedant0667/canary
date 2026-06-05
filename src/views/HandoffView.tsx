@@ -1,5 +1,5 @@
 // View ② — Hand-off (PRD §4 View 2 / design §4 HandoffViewProps).
-// Pure renderer: shows the CareLoop Continuity Record (real FHIR resource
+// Pure renderer: shows the Cardinal Continuity Record (real FHIR resource
 // names, built from `record`) on the LEFT, and a deliberately plainer/grayer
 // generic-EMR "Accura Home Health — intake" mock on the RIGHT. Send animates a
 // transfer; the right side auto-populates field by field; nothing is re-collected,
@@ -372,7 +372,7 @@ function ContinuityRecord({
 // ---------------------------------------------------------------------------
 // Accura Home Health intake (RIGHT) — deliberately plainer / grayer generic-EMR.
 // Hard-coded neutral grays here are intentional system-differentiation, NOT a
-// clinical tier (those stay slate/tier-only on the CareLoop side).
+// clinical tier (those stay slate/tier-only on the Cardinal side).
 // ---------------------------------------------------------------------------
 
 const EMR_BORDER = '#cfcabf';
@@ -523,12 +523,12 @@ function TransferBeam({ active }: { active: boolean }) {
             borderRadius: '50%',
             background: 'var(--slate)',
             opacity: 0.85,
-            animation: `careloop-fly 1.4s ${i * 0.18}s ease-in-out infinite`,
+            animation: `cardinal-fly 1.4s ${i * 0.18}s ease-in-out infinite`,
           }}
         />
       ))}
       <style>{`
-        @keyframes careloop-fly {
+        @keyframes cardinal-fly {
           0%   { transform: translateX(0) scale(1); opacity: 0; }
           15%  { opacity: 0.9; }
           85%  { opacity: 0.9; }

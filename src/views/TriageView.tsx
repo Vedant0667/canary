@@ -46,6 +46,11 @@ export interface TriageViewProps {
   // Once a decision is logged for this patient, the action row locks (PRD-extra:
   // no re-deciding without a reset). null = open.
   decision: Decision | null;
+  // Live extraction of a pasted, never-before-seen referral note (anti-hardcode).
+  onExtractCustom: (rawText: string) => void;
+  customError: string | null;
+  liveAvailable: boolean;
+  isCustom: boolean;
 }
 
 // --- small style helpers ----------------------------------------------------
@@ -102,7 +107,7 @@ function EhrChrome() {
           display: 'inline-block',
         }}
       />
-      Embedded in EHR · CareLoop panel · MRN 4471932
+      Embedded in EHR · Cardinal panel · MRN 4471932
     </div>
   );
 }

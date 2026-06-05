@@ -1,4 +1,4 @@
-# CareLoop — Eligibility Scoring Engine Spec (Demo / Hackathon)
+# Cardinal — Eligibility Scoring Engine Spec (Demo / Hackathon)
 
 **Purpose:** deterministic, fully explainable logic behind the Home Eligibility Score.
 LLM extracts the packet → this engine scores it. The engine is pure functions, no API calls,

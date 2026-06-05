@@ -1,4 +1,4 @@
-// CareLoop shared type contract.
+// Cardinal shared type contract.
 // Derived verbatim from careloop-scoring-spec.md §2 (PatientRecord), §8 (ScoreResult),
 // and §12/§13 (trend). The engine produces these; the UI ONLY renders them.
 // All UI numbers must trace to a `contributions` record — never hardcode clinical copy.

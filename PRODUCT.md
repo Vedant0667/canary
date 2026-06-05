@@ -1,8 +1,8 @@
-# CareLoop — Product context
+# Cardinal — Product context
 
 **Register:** product (clinical tool UI). Design SERVES the task; earned familiarity over novelty.
 
-**What it is:** a single-page demo of the CareLoop loop for one CHF patient story —
+**What it is:** a single-page demo of the Cardinal loop for one CHF patient story —
 ① physician triage → ② FHIR hand-off → ③ home monitoring. A judge watches a discharge
 packet get read by AI, scored by transparent deterministic rules, the doctor decide, the
 data travel untouched to the homecare EMR, and a day-4 trajectory alert fire before any

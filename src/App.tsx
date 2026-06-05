@@ -1,4 +1,4 @@
-// CareLoop — integration shell.
+// Cardinal — integration shell.
 // Owns the single DemoState, calls the clinical engine (the ONLY place clinical
 // functions run), and wires the three pure views behind a top stepper.
 // "UI never computes clinically" — views receive ScoreResult / TierResult as props.
@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PatientRecord, ScoreResult } from './types';
 import { PACKETS } from './data/packets';
 import { MRS_R_SERIES } from './data/monitoring';
-import { extractPacket } from './lib/extraction';
+import { extractPacket, extractLive } from './lib/extraction';
 import { scoreEligibility, assessTrend } from './engine/scoring';
 import { Stepper } from './components/primitives';
 import type { Step } from './components/primitives';
@@ -31,7 +31,15 @@ interface DemoState {
   telehealthScheduled: boolean;
   extracting: boolean;
   source: 'live' | 'cache';
+  // Live extraction of a pasted, never-before-seen note. Null unless the user
+  // used the "paste a referral note" path; carries an honest error if it fails.
+  customError: string | null;
 }
+
+// True when a real Anthropic key is configured at build time. Drives honest
+// provenance copy ("live" vs "cached demo data") and gates the paste-a-note path.
+const LIVE_AVAILABLE = Boolean(import.meta.env.VITE_ANTHROPIC_API_KEY);
+const CUSTOM_PACKET_ID = 'custom';
 
 const DECISION_LOG: Record<Decision, string> = {
   home: 'Decision: home · Dr. demo · 14:02 · logged',
@@ -62,6 +70,7 @@ export default function App() {
     telehealthScheduled: false,
     extracting: true,
     source: 'cache',
+    customError: null,
   });
 
   // Guards against a stale async extraction (rapid packet switching) clobbering
@@ -130,6 +139,7 @@ export default function App() {
         telehealthScheduled: false,
         day: 1,
         view: 'triage',
+        customError: null,
       }));
       setState((s) => {
         runExtraction(id, s.forceFallback);
@@ -138,6 +148,40 @@ export default function App() {
     },
     [runExtraction],
   );
+
+  // --- live extraction of a pasted, never-before-seen referral note ---------
+  // No cached fallback: if the model can't run we show an honest error instead
+  // of fabricating a record. This is the anti-hardcoding proof — arbitrary text
+  // in, real structured record + real engine score out.
+  const onExtractCustom = useCallback((rawText: string) => {
+    const runId = ++runIdRef.current;
+    setState((s) => ({
+      ...s,
+      packetId: CUSTOM_PACKET_ID,
+      record: null,
+      scoreResult: null,
+      extracting: true,
+      source: 'live',
+      customError: null,
+      handoffSent: false,
+      telehealthScheduled: false,
+      day: 1,
+      view: 'triage',
+    }));
+
+    void extractLive(rawText).then((res) => {
+      if (runId !== runIdRef.current) return; // superseded
+      if (!res.ok) {
+        setState((s) => ({ ...s, extracting: false, customError: res.message, record: null, scoreResult: null }));
+        return;
+      }
+      const scoreResult = scoreEligibility(res.record);
+      setState((s) => ({ ...s, record: res.record, scoreResult, source: 'live' }));
+      window.setTimeout(() => {
+        setState((s) => (runId === runIdRef.current ? { ...s, extracting: false } : s));
+      }, 1200);
+    });
+  }, []);
 
   const onDecideHome = useCallback(() => {
     // Home disposition → log it for THIS patient and move to Hand-off (Send gates
@@ -186,8 +230,14 @@ export default function App() {
       telehealthScheduled: false,
       day: 1,
       view: 'triage',
+      packetId: DEFAULT_PACKET_ID,
+      customError: null,
     }));
-  }, []);
+    setState((s) => {
+      runExtraction(DEFAULT_PACKET_ID, s.forceFallback);
+      return s;
+    });
+  }, [runExtraction]);
 
   // --- derived: current-patient decision + stepper unlock ------------------
   const decision = state.decisions[state.packetId] ?? null;
@@ -231,8 +281,8 @@ export default function App() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-          <h1 className="display" style={{ margin: 0, fontSize: '1.3rem', fontWeight: 400 }}>
-            CareLoop
+          <h1 className="display" style={{ margin: 0, fontSize: '1.5rem', lineHeight: 1 }}>
+            Cardinal
           </h1>
           <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
             CHF hospital-at-home
@@ -240,26 +290,29 @@ export default function App() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          {offline && (
-            <span
-              className="mono"
-              role="status"
-              style={{
-                fontSize: '0.68rem',
-                color: 'var(--slate-text)',
-                background: 'var(--slate-chip)',
-                border: '0.5px solid var(--slate-chip)',
-                borderRadius: 'var(--radius-pill)',
-                padding: '3px 10px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-              }}
-            >
-              <span aria-hidden="true">◴</span>
-              offline (cached)
-            </span>
-          )}
+          <span
+            className="mono"
+            role="status"
+            title={
+              offline
+                ? 'Showing committed cached extractions. Press F to toggle, or set VITE_ANTHROPIC_API_KEY for live extraction.'
+                : 'Extractions are running live against the Anthropic API.'
+            }
+            style={{
+              fontSize: '0.68rem',
+              color: offline ? 'var(--slate-text)' : 'var(--pass-text)',
+              background: offline ? 'var(--slate-chip)' : 'var(--pass-bg)',
+              border: '0.5px solid transparent',
+              borderRadius: 'var(--radius-pill)',
+              padding: '3px 10px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <span aria-hidden="true">{offline ? '◴' : '◉'}</span>
+            {offline ? 'offline · cached' : 'live · Claude'}
+          </span>
           <Stepper
             steps={STEPS}
             currentIndex={currentIndex}
@@ -288,6 +341,10 @@ export default function App() {
           onDecideAdmit={onDecideAdmit}
           decisionLog={decisionLog}
           decision={decision}
+          onExtractCustom={onExtractCustom}
+          customError={state.customError}
+          liveAvailable={LIVE_AVAILABLE}
+          isCustom={state.packetId === CUSTOM_PACKET_ID}
         />
       )}
 

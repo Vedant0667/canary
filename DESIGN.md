@@ -1,4 +1,4 @@
-# CareLoop — Design system
+# Cardinal — Design system
 
 Committed identity (from the team's `08-design.md`; identity-preservation wins — do not
 swap the palette). Tokens live in `src/styles/tokens.css`; shared components in

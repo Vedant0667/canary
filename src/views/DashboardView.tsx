@@ -3,8 +3,16 @@
 // computes tiers (assessTrend); this view NEVER computes clinically — it only
 // renders deltas/tiers it is handed and derives display numbers from them.
 
+import { useEffect, useState } from 'react';
 import type { Reading, Tier, TierResult } from '../types';
-import { Chip, Sparkline, TierDot } from '../components/primitives';
+import { Chip, TierDot } from '../components/primitives';
+import {
+  MRS_R_TIMELINE,
+  ADMITTED_INDEX,
+  SENT_HOME_INDEX,
+  HOME_START_INDEX,
+} from '../data/monitoring';
+import type { TimelinePoint } from '../data/monitoring';
 
 export interface DashboardViewProps {
   day: number; // 1..5, current revealed day
@@ -62,8 +70,6 @@ export default function DashboardView({
   const sBase = baselineMean(readings, 'spo2_pct');
   const hBase = baselineMean(readings, 'hr_bpm');
 
-  const highlight = day >= 4 ? 3 : undefined; // emphasize day-4 point once revealed
-
   // Day-4 alert numbers derived from the engine's TierResult, never hardcoded.
   const day4 = tierByDay[3];
   const showAlert = day >= 4 && currentTier === 'yellow' && !!day4;
@@ -71,9 +77,21 @@ export default function DashboardView({
   // Closing banner after telehealth scheduled and day 5 revealed.
   const showClose = telehealthScheduled && day >= 5 && currentTier === 'green';
 
-  const series = (key: 'weight_lb' | 'spo2_pct' | 'hr_bpm') => revealed.map((r) => r[key]);
-
   const canAdvance = day < readings.length;
+
+  // --- Full trajectory (hospital → discharge → home) for the charts ---------
+  // Hospital points are always shown; home points reveal with `day`.
+  const revealedCount = HOME_START_INDEX + day;
+  const fullLen = MRS_R_TIMELINE.length;
+  const points = MRS_R_TIMELINE.slice(0, revealedCount);
+  const dayFourIndex = HOME_START_INDEX + 3; // home day 4
+
+  // Clickable point selection, synchronized across the three charts. Following the
+  // latest revealed day by default; a click pins it until the next Advance.
+  const [pinned, setPinned] = useState<number | null>(null);
+  useEffect(() => setPinned(null), [day]); // advancing day re-follows the latest point
+  const selectedIndex = pinned != null && pinned < revealedCount ? pinned : revealedCount - 1;
+  const selectedPoint = MRS_R_TIMELINE[selectedIndex];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -200,41 +218,78 @@ export default function DashboardView({
           )}
         </div>
 
-        {/* Three sparklines, baseline band shaded (PRD §4.2/§4.3). */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 12 }}>
-          <SignalChart
-            title="Weight (lb)"
-            values={series('weight_lb')}
-            latest={latestReading?.weight_lb}
+        {/* Selected-day readout — updates as you click any point (synchronized). */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            flexWrap: 'wrap',
+            padding: '8px 11px',
+            borderRadius: 10,
+            background: selectedPoint.phase === 'hospital' ? 'var(--slate-fill)' : 'var(--card)',
+            border: '0.5px solid var(--border)',
+          }}
+        >
+          <span
+            className="mono"
+            style={{ fontSize: '0.72rem', color: selectedPoint.phase === 'hospital' ? 'var(--slate-text)' : 'var(--ink)', minWidth: 168 }}
+          >
+            {selectedPoint.full}
+          </span>
+          <Readout label="Weight" value={`${selectedPoint.weight_lb.toFixed(1)} lb`} />
+          <Readout label="SpO₂" value={`${selectedPoint.spo2_pct}%`} />
+          <Readout label="HR" value={`${selectedPoint.hr_bpm} bpm`} />
+        </div>
+
+        {/* Three trend charts — full hospital → home arc, clickable, with admitted
+            and sent-home reference lines and the home-baseline band (PRD §4.2/§4.3). */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+          <TrendChart
+            title="Weight"
             unit="lb"
+            metric="weight_lb"
+            points={points}
+            fullLen={fullLen}
             baseline={wBase}
             margin={3}
-            highlight={highlight}
+            dayFourIndex={dayFourIndex}
+            selectedIndex={selectedIndex}
+            onSelect={setPinned}
             decimals={1}
           />
-          <SignalChart
-            title="SpO₂ (%)"
-            values={series('spo2_pct')}
-            latest={latestReading?.spo2_pct}
+          <TrendChart
+            title="SpO₂"
             unit="%"
+            metric="spo2_pct"
+            points={points}
+            fullLen={fullLen}
             baseline={sBase}
             margin={2}
-            highlight={highlight}
+            dayFourIndex={dayFourIndex}
+            selectedIndex={selectedIndex}
+            onSelect={setPinned}
           />
-          <SignalChart
-            title="HR (bpm)"
-            values={series('hr_bpm')}
-            latest={latestReading?.hr_bpm}
+          <TrendChart
+            title="Heart rate"
             unit="bpm"
+            metric="hr_bpm"
+            points={points}
+            fullLen={fullLen}
             baseline={hBase}
             margin={10}
-            highlight={highlight}
+            dayFourIndex={dayFourIndex}
+            selectedIndex={selectedIndex}
+            onSelect={setPinned}
           />
         </div>
 
-        <p className="mono" style={{ margin: 0, fontSize: '0.7rem', color: 'var(--muted)' }}>
-          Shaded band: days 1–2 baseline ± trend margin.
-        </p>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <Legend swatch={<MarkerSwatch />} label="admitted · sent home" />
+          <Legend swatch={<span className="mono" style={{ fontSize: '0.7rem' }}>▢</span>} label="hospital" />
+          <Legend swatch={<span className="mono" style={{ fontSize: '0.7rem', color: 'var(--slate)' }}>●</span>} label="home" />
+          <Legend swatch={<span style={{ width: 14, height: 8, background: 'var(--slate-fill)', borderRadius: 2, display: 'inline-block' }} />} label="days 1–2 baseline band" />
+        </div>
       </section>
 
       {/* Day stepper (PRD §4.3) — the demo driver. */}
@@ -340,41 +395,171 @@ function MetricCard({
   );
 }
 
-function SignalChart({
+type Metric = 'weight_lb' | 'spo2_pct' | 'hr_bpm';
+
+function Readout({ label, value }: { label: string; value: string }) {
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column' }}>
+      <span className="mono" style={{ fontSize: '0.54rem', letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+        {label}
+      </span>
+      <span className="mono" style={{ fontSize: '0.92rem', fontWeight: 500, color: 'var(--ink)' }}>
+        {value}
+      </span>
+    </span>
+  );
+}
+
+function Legend({ swatch, label }: { swatch: React.ReactNode; label: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      {swatch}
+      <span className="mono" style={{ fontSize: '0.66rem', color: 'var(--muted)' }}>
+        {label}
+      </span>
+    </span>
+  );
+}
+
+function MarkerSwatch() {
+  return (
+    <svg width="12" height="12" aria-hidden="true">
+      <line x1="6" y1="0" x2="6" y2="12" stroke="var(--muted)" strokeWidth="1" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
+// Interactive trend chart: full hospital→home arc, clickable points, admitted /
+// sent-home reference lines, and the home-baseline band. Y-axis is scaled over the
+// FULL timeline so it stays stable as days reveal.
+function TrendChart({
   title,
-  values,
-  latest,
   unit,
+  metric,
+  points,
+  fullLen,
   baseline,
   margin,
-  highlight,
+  dayFourIndex,
+  selectedIndex,
+  onSelect,
   decimals = 0,
 }: {
   title: string;
-  values: number[];
-  latest?: number;
   unit: string;
+  metric: Metric;
+  points: TimelinePoint[];
+  fullLen: number;
   baseline: number;
   margin: number;
-  highlight?: number;
+  dayFourIndex: number;
+  selectedIndex: number;
+  onSelect: (i: number) => void;
   decimals?: number;
 }) {
+  const W = 340;
+  const H = 122;
+  const padL = 12;
+  const padR = 12;
+  const padT = 18;
+  const padB = 20;
+  const plotW = W - padL - padR;
+  const plotTop = padT;
+  const plotBottom = H - padB;
+
+  // Stable Y scale over the whole timeline + the baseline band edges.
+  const all = MRS_R_TIMELINE.map((p) => p[metric]);
+  const lo = Math.min(...all, baseline - margin);
+  const hi = Math.max(...all, baseline + margin);
+  const pad = (hi - lo) * 0.12 || 1;
+  const yMin = lo - pad;
+  const yMax = hi + pad;
+
+  const x = (i: number) => padL + (fullLen === 1 ? plotW / 2 : (i / (fullLen - 1)) * plotW);
+  const y = (v: number) => plotBottom - ((v - yMin) / (yMax - yMin)) * (plotBottom - plotTop);
+
+  const line = points
+    .map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p[metric]).toFixed(1)}`)
+    .join(' ');
+
+  const selVal = points[selectedIndex]?.[metric];
+
   return (
-    <div className="card-sunken" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
-        {title}
-      </span>
-      <Sparkline
-        values={values}
-        width={150}
-        height={48}
-        baseline={baseline}
-        baselineMargin={margin}
-        highlightIndex={highlight}
-      />
-      <span className="mono" style={{ fontSize: '0.78rem' }}>
-        {latest != null ? `${latest.toFixed(decimals)} ${unit}` : '—'}
-      </span>
+    <div className="card-sunken" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+        <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
+          {title}
+        </span>
+        <span className="mono" style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--ink)' }}>
+          {selVal != null ? `${selVal.toFixed(decimals)} ${unit}` : '—'}
+        </span>
+      </div>
+
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label={`${title} trend, hospital through home`}>
+        {/* hospital-phase shading */}
+        <rect x={x(0)} y={plotTop} width={x(SENT_HOME_INDEX) - x(0)} height={plotBottom - plotTop} fill="var(--slate-fill)" opacity={0.6} />
+
+        {/* home baseline band (days 1–2 ± trend margin) */}
+        <rect
+          x={x(HOME_START_INDEX)}
+          y={y(baseline + margin)}
+          width={x(fullLen - 1) - x(HOME_START_INDEX)}
+          height={Math.max(0, y(baseline - margin) - y(baseline + margin))}
+          fill="var(--pass-bg)"
+          opacity={0.5}
+        />
+
+        {/* reference lines: admitted + sent home */}
+        {[
+          { i: ADMITTED_INDEX, label: 'admitted' },
+          { i: SENT_HOME_INDEX, label: 'sent home' },
+        ].map((m) => (
+          <g key={m.label}>
+            <line x1={x(m.i)} y1={plotTop - 4} x2={x(m.i)} y2={plotBottom} stroke="var(--muted)" strokeWidth={1} strokeDasharray="3 3" />
+            <text x={x(m.i)} y={plotTop - 7} textAnchor={m.i === ADMITTED_INDEX ? 'start' : 'middle'} className="mono" fontSize={7.5} fill="var(--muted)">
+              {m.label}
+            </text>
+          </g>
+        ))}
+
+        {/* selected-day indicator */}
+        <line x1={x(selectedIndex)} y1={plotTop} x2={x(selectedIndex)} y2={plotBottom} stroke="var(--slate)" strokeWidth={1} opacity={0.5} />
+
+        {/* trend line */}
+        <path d={line} fill="none" stroke="var(--slate)" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+
+        {/* x-axis labels */}
+        {points.map((p, i) => (
+          <text key={`lbl-${p.t}`} x={x(i)} y={H - 6} textAnchor="middle" className="mono" fontSize={7} fill="var(--muted)">
+            {p.label}
+          </text>
+        ))}
+
+        {/* points + hit targets */}
+        {points.map((p, i) => {
+          const cx = x(i);
+          const cy = y(p[metric]);
+          const isHome = p.phase === 'home';
+          const isDay4 = p.t === dayFourIndex;
+          const isSel = i === selectedIndex;
+          return (
+            <g key={`pt-${p.t}`} style={{ cursor: 'pointer' }} onClick={() => onSelect(i)}>
+              {isSel && <circle cx={cx} cy={cy} r={5.5} fill="none" stroke="var(--slate)" strokeWidth={1} />}
+              <circle
+                cx={cx}
+                cy={cy}
+                r={isDay4 ? 3.4 : 2.6}
+                fill={isDay4 ? 'var(--watch-text)' : isHome ? 'var(--slate)' : 'var(--card)'}
+                stroke={isHome || isDay4 ? 'none' : 'var(--muted)'}
+                strokeWidth={1}
+              />
+              <circle cx={cx} cy={cy} r={12} fill="transparent">
+                <title>{`${p.full}: ${p[metric].toFixed(decimals)} ${unit}`}</title>
+              </circle>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }

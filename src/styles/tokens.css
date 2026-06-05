@@ -1,0 +1,123 @@
+/* CareLoop design tokens — condensed from 08-design.md / PRD §6. Follow EXACTLY.
+ * Iron rules:
+ *  - Any color other than slate/neutral MUST encode a clinical tier.
+ *  - Accept / Override always equal weight.
+ *  - Tier is always color + icon + word (a11y).
+ *  - No shadows, no gradients. 0.5px borders. Weights 400/500 only. Sentence case.
+ */
+
+:root {
+  /* Neutral palette */
+  --page: #f4efe6; /* cream */
+  --card: #fbf8f1;
+  --border: #e0d6c0;
+  --ink: #1a1714; /* text */
+  --muted: #6b635a;
+
+  /* Sole accent — slate */
+  --slate: #4f6e91;
+  --slate-fill: #eef1f5;
+  --slate-chip: #e1e7f0;
+  --slate-text: #3e587a;
+
+  /* Tier colors (functional only — never decorative) */
+  --pass-text: #5e7b3f; /* green */
+  --pass-bg: #dce6cc;
+  --watch-text: #b5872f; /* amber */
+  --watch-bg: #f0e6cc;
+  --admit-text: #a8553d; /* red */
+  --admit-bg: #ebd7ce;
+
+  /* Type */
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', SFMono-Regular, Menlo,
+    Consolas, monospace;
+
+  /* Shape */
+  --radius-card: 14px;
+  --radius-pill: 20px;
+  --inset: 11px;
+  --border-w: 0.5px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.45;
+}
+
+/* Numerics, labels, captions ALWAYS mono (PRD §6). */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* Reusable neutral card. */
+.card {
+  background: var(--card);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--inset);
+}
+
+/* Sunken inset card (score card, footers). */
+.card-sunken {
+  background: var(--page);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--inset);
+}
+
+button {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* Tier helpers — color + bg. Always pair with an icon + word in markup. */
+.tier-green {
+  color: var(--pass-text);
+  background: var(--pass-bg);
+}
+.tier-yellow {
+  color: var(--watch-text);
+  background: var(--watch-bg);
+}
+.tier-red {
+  color: var(--admit-text);
+  background: var(--admit-bg);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-pill);
+  padding: 3px 12px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+}

@@ -1,0 +1,136 @@
+// CareLoop shared type contract.
+// Derived verbatim from careloop-scoring-spec.md §2 (PatientRecord), §8 (ScoreResult),
+// and §12/§13 (trend). The engine produces these; the UI ONLY renders them.
+// All UI numbers must trace to a `contributions` record — never hardcode clinical copy.
+
+// ---------------------------------------------------------------------------
+// Input — PatientRecord (spec §2). Also the JSON schema given to Claude.
+// All fields nullable: missing data is handled by the confidence model (§7),
+// never by guessing.
+// ---------------------------------------------------------------------------
+
+export type Dyspnea = 'none' | 'exertional' | 'at_rest';
+export type Edema = 'none' | 'stable' | 'worsening';
+export type Device = 'scale' | 'bp_cuff' | 'pulse_ox' | 'ecg_patch';
+export type Caregiver = 'none' | 'part_time' | 'full_time';
+export type Connectivity = 'none' | 'cell_only' | 'wifi';
+export type MedSelfAdmin = 'yes' | 'assisted' | 'no';
+export type FallRisk = 'low' | 'moderate' | 'high';
+
+export interface Vitals {
+  hr_bpm: number | null;
+  bp_systolic: number | null;
+  bp_diastolic: number | null;
+  spo2_pct: number | null;
+  resp_rate: number | null;
+  temp_c: number | null;
+  weight_lb: number | null;
+  weight_delta_72h_lb: number | null;
+}
+
+export interface Symptoms {
+  dyspnea: Dyspnea | null;
+  edema: Edema | null;
+  chest_pain: boolean | null;
+}
+
+export interface HomeFactors {
+  caregiver: Caregiver | null;
+  housing_stable: boolean | null;
+  has_power_refrigeration: boolean | null;
+  connectivity: Connectivity | null;
+  med_self_admin: MedSelfAdmin | null;
+  fall_risk: FallRisk | null;
+}
+
+export interface PatientRecord {
+  name: string | null;
+  age: number | null;
+  mrn: string | null;
+  condition: 'CHF';
+  vitals: Vitals;
+  symptoms: Symptoms;
+  devices_available: Device[];
+  // Optional demo nuance (spec §5): devices a vendor can drop off same-day.
+  devices_deliverable_today?: Device[];
+  home: HomeFactors;
+}
+
+// ---------------------------------------------------------------------------
+// Output — ScoreResult (spec §8). Drives the entire Triage UI.
+// ---------------------------------------------------------------------------
+
+export type SignalStatus = 'in' | 'borderline' | 'out';
+export type GateStatus = 'pass' | 'watch' | 'fail';
+export type Band = 'eligible' | 'watch' | 'admit';
+export type ConfidenceLevel = 'high' | 'medium' | 'low';
+
+export type RedFlagCode = 'RF1' | 'RF2' | 'RF3' | 'RF4' | 'RF5' | 'RF6';
+
+export interface RedFlag {
+  code: RedFlagCode;
+  label: string; // e.g. "SpO₂ 91 — below home-manageable floor"
+}
+
+// One record per signal / checklist item — ALWAYS emitted, in-range ones too.
+export interface Contribution {
+  field: string;
+  value: string | number | boolean | null;
+  status: SignalStatus;
+  points: number; // 0..100 signal points
+  weight: number; // share of the gate
+  note: string; // plain-English explanation rendered in the gate expander
+}
+
+export interface Gate {
+  id: 'A' | 'B' | 'C';
+  label: string;
+  weight: number; // A 0.50 · B 0.20 · C 0.30
+  score: number; // 0..100
+  status: GateStatus;
+  contributions: Contribution[];
+}
+
+export interface Confidence {
+  level: ConfidenceLevel;
+  completeness: number; // 0..1
+  // Static demo values per spec §7 / design §5.2 — internally simulated.
+  model_certainty: number; // 0..1
+  case_similarity_n: number;
+}
+
+export interface ScoreResult {
+  overall: number;
+  band: Band;
+  red_flags: RedFlag[];
+  confidence: Confidence;
+  gates: Gate[];
+  dominant_signal: string; // field name of the largest weighted deduction
+  dominant_note: string; // the note for that signal (for templated rationale)
+  rationale: string; // assembled from templates (spec §9), never LLM-generated
+}
+
+// ---------------------------------------------------------------------------
+// Monitoring trend — assessTrend (spec §12).
+// ---------------------------------------------------------------------------
+
+export type Tier = 'green' | 'yellow' | 'red';
+
+export interface Reading {
+  day: number;
+  weight_lb: number;
+  spo2_pct: number;
+  hr_bpm: number;
+}
+
+export interface TierResult {
+  tier: Tier;
+  // Deltas vs the days 1–2 baseline mean, for the alert caption.
+  weight_delta_vs_baseline: number;
+  spo2_delta_vs_baseline: number;
+  hr_delta_vs_baseline: number;
+  // True when tier is yellow/red but every absolute value is still in-range —
+  // the "no threshold alarm would have fired yet" demo moment.
+  all_values_in_range: boolean;
+  reason: string;
+}

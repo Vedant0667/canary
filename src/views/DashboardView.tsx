@@ -78,33 +78,63 @@ export default function DashboardView({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Day-4 trajectory alert — surfaced to the very top (PRD §4.4). */}
-      {showAlert && (
+      {showAlert && latestReading && (
         <section
-          className="card"
+          className="card cl-rise"
           role="alert"
-          style={{ borderLeft: '3px solid var(--watch-text)', display: 'flex', flexDirection: 'column', gap: 10 }}
+          style={{
+            border: '0.5px solid var(--watch-text)',
+            background: 'var(--watch-bg)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <Chip tone="yellow">◆ Trajectory alert</Chip>
-            <span className="mono" style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
-              Mrs. R · day {day}
+            <span className="mono" style={{ fontSize: '0.78rem', color: 'var(--watch-text)' }}>
+              Mrs. R · day {day} · forecast: rising 24–48h decompensation risk
             </span>
           </div>
-          <p className="mono" style={{ margin: 0, fontSize: '0.86rem', lineHeight: 1.5 }}>
-            Weight {signed(day4.weight_delta_vs_baseline, 1)} lb vs baseline, SpO₂{' '}
-            {signed(day4.spo2_delta_vs_baseline)}, HR {signed(day4.hr_delta_vs_baseline)}.{' '}
-            {day4.all_values_in_range ? 'No single value out of range.' : ''} Forecast: rising 24–48h
-            decompensation risk.
+          <p style={{ margin: 0, fontSize: '0.92rem', lineHeight: 1.5, color: 'var(--ink)' }}>
+            The trend is converging — weight {signed(day4.weight_delta_vs_baseline, 1)} lb vs
+            baseline with SpO₂ {signed(day4.spo2_delta_vs_baseline)} and HR{' '}
+            {signed(day4.hr_delta_vs_baseline)}. Yet every individual vital is still inside its
+            alarm threshold:
           </p>
-          <p className="mono" style={{ margin: 0, fontSize: '0.74rem', color: 'var(--muted)' }}>
-            No threshold alarm would have fired yet.
+
+          {/* Threshold proof — each tracked vital against its hard alarm line. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            <AlarmCheck
+              label="Weight Δ vs base"
+              value={`${signed(day4.weight_delta_vs_baseline, 1)} lb`}
+              alarm="alarm at ≥ +5 lb"
+              ok={day4.weight_delta_vs_baseline < 5}
+            />
+            <AlarmCheck
+              label="SpO₂"
+              value={`${latestReading.spo2_pct}%`}
+              alarm="alarm at < 92%"
+              ok={latestReading.spo2_pct >= 92}
+            />
+            <AlarmCheck
+              label="Heart rate"
+              value={`${latestReading.hr_bpm} bpm`}
+              alarm="alarm at > 130"
+              ok={latestReading.hr_bpm <= 130 && latestReading.hr_bpm >= 45}
+            />
+          </div>
+
+          <p className="mono" style={{ margin: 0, fontSize: '0.76rem', color: 'var(--watch-text)' }}>
+            ◆ No single-threshold alarm would have fired yet — this is forecast, not alert.
           </p>
-          {/* EQUAL-WEIGHT actions (PRD §6 iron rule): identical outline buttons. */}
+
+          {/* EQUAL-WEIGHT actions (iron rule): identical buttons. */}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button onClick={onTelehealth} style={outlineBtn} disabled={telehealthScheduled}>
-              {telehealthScheduled ? 'Telehealth scheduled' : 'Schedule telehealth'}
+            <button className="btn-action" onClick={onTelehealth} disabled={telehealthScheduled}>
+              {telehealthScheduled ? '✓ Telehealth scheduled' : 'Schedule telehealth'}
             </button>
-            <button onClick={() => {}} style={outlineBtn}>
+            <button className="btn-action" onClick={() => {}} disabled={telehealthScheduled}>
               Notify physician
             </button>
           </div>
@@ -114,11 +144,18 @@ export default function DashboardView({
       {/* Closing banner (PRD §4.5) — the payoff. */}
       {showClose && (
         <section
-          className="card"
-          style={{ borderLeft: '3px solid var(--pass-text)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
+          className="card cl-rise"
+          style={{
+            border: '0.5px solid var(--pass-text)',
+            background: 'var(--pass-bg)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
         >
           <Chip tone="green">● Resolved at home</Chip>
-          <span className="mono" style={{ fontSize: '0.88rem' }}>
+          <span className="mono" style={{ fontSize: '0.9rem', color: 'var(--ink)' }}>
             Bed-days used: 0 · Readmission: none · Studies re-run: 0
           </span>
         </section>
@@ -200,9 +237,9 @@ export default function DashboardView({
         </p>
       </section>
 
-      {/* Day stepper (PRD §4.3). */}
+      {/* Day stepper (PRD §4.3) — the demo driver. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <button onClick={onAdvanceDay} disabled={!canAdvance} style={{ ...outlineBtn, opacity: canAdvance ? 1 : 0.5, cursor: canAdvance ? 'pointer' : 'not-allowed' }}>
+        <button onClick={onAdvanceDay} disabled={!canAdvance} className="btn-primary">
           {canAdvance ? 'Advance day ▸' : 'End of series'}
         </button>
         <span className="mono" style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>
@@ -213,15 +250,56 @@ export default function DashboardView({
   );
 }
 
-const outlineBtn: React.CSSProperties = {
-  border: '0.5px solid var(--border)',
-  borderRadius: 'var(--radius-pill)',
-  padding: '7px 18px',
-  background: 'var(--card)',
-  color: 'var(--ink)',
-  fontSize: '0.82rem',
-  fontWeight: 500,
+const TIER_BG: Record<Tier, string> = {
+  green: 'var(--pass-bg)',
+  yellow: 'var(--watch-bg)',
+  red: 'var(--admit-bg)',
 };
+const TIER_TEXT: Record<Tier, string> = {
+  green: 'var(--pass-text)',
+  yellow: 'var(--watch-text)',
+  red: 'var(--admit-text)',
+};
+
+function AlarmCheck({
+  label,
+  value,
+  alarm,
+  ok,
+}: {
+  label: string;
+  value: string;
+  alarm: string;
+  ok: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 3,
+        padding: '8px 10px',
+        borderRadius: 10,
+        background: 'var(--card)',
+        border: '0.5px solid var(--border)',
+      }}
+    >
+      <span className="mono" style={{ fontSize: '0.58rem', letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+        {label}
+      </span>
+      <span className="mono" style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--ink)' }}>
+        {value}
+      </span>
+      <span
+        className="mono"
+        style={{ fontSize: '0.62rem', color: ok ? 'var(--pass-text)' : 'var(--admit-text)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+      >
+        <span aria-hidden="true">{ok ? '✓' : '▲'}</span>
+        {ok ? 'within range' : 'breached'} · {alarm}
+      </span>
+    </div>
+  );
+}
 
 function MetricCard({
   label,
@@ -235,7 +313,17 @@ function MetricCard({
   active: boolean;
 }) {
   return (
-    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div
+      className="card"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        background: active ? TIER_BG[tier] : 'var(--card)',
+        borderColor: active ? TIER_TEXT[tier] : 'var(--border)',
+        transition: 'background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out)',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={SECTION_LABEL} className="mono">
           {label}
@@ -244,7 +332,7 @@ function MetricCard({
       </div>
       <span
         className="mono"
-        style={{ fontSize: '2rem', fontWeight: 500, color: active ? 'var(--ink)' : 'var(--muted)' }}
+        style={{ fontSize: '2.1rem', fontWeight: 500, color: active ? TIER_TEXT[tier] : 'var(--muted)' }}
       >
         {value}
       </span>

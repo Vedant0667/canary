@@ -12,7 +12,14 @@ import type {
   Contribution,
   Device,
 } from '../types';
-import { BandPill, StatusChip, Chip } from '../components/primitives';
+import {
+  BandPill,
+  StatusChip,
+  ThresholdLadder,
+  ScoreMeter,
+} from '../components/primitives';
+
+export type Decision = 'home' | 'admit';
 
 // PacketMeta contract (design §4). Defined locally to keep this view decoupled
 // from data/packets.ts; structurally compatible with what the integration agent
@@ -36,6 +43,9 @@ export interface TriageViewProps {
   onAccept: () => void;
   onOverrideToAdmit: () => void;
   decisionLog: string | null;
+  // Once a decision is logged for this patient, the action row locks (PRD-extra:
+  // no re-deciding without a reset). null = open.
+  decision: Decision | null;
 }
 
 // --- small style helpers ----------------------------------------------------
@@ -56,6 +66,11 @@ const GATE_STATUS_CLASS: Record<Gate['status'], string> = {
   pass: 'tier-green',
   watch: 'tier-yellow',
   fail: 'tier-red',
+};
+const GATE_TONE: Record<Gate['status'], 'green' | 'yellow' | 'red'> = {
+  pass: 'green',
+  watch: 'yellow',
+  fail: 'red',
 };
 
 // =============================================================================
@@ -296,20 +311,57 @@ function ScoreCard({ scoreResult }: { scoreResult: ScoreResult }) {
   const c = scoreResult.confidence;
   const pct = (n: number) => `${Math.round(n * 100)}%`;
   const admit = scoreResult.band === 'admit';
+  const overallTone =
+    scoreResult.band === 'eligible' ? 'green' : scoreResult.band === 'watch' ? 'yellow' : 'red';
 
   return (
-    <div className="card-sunken" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="card-sunken cl-rise" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="mono" style={labelStyle}>
         Home eligibility
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-        <span
-          className="mono"
-          style={{ fontSize: 54, lineHeight: 1, fontWeight: 500, color: 'var(--ink)' }}
-        >
-          {scoreResult.overall}
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
+        <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <span
+            className="mono"
+            style={{ fontSize: 56, lineHeight: 0.9, fontWeight: 500, color: 'var(--ink)' }}
+          >
+            {scoreResult.overall}
+          </span>
+          <span className="mono" style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>/ 100</span>
         </span>
-        <BandPill band={scoreResult.band} large />
+        <span style={{ marginBottom: 4 }}>
+          <BandPill band={scoreResult.band} large />
+        </span>
+      </div>
+      <ScoreMeter score={scoreResult.overall} tone={overallTone} height={6} />
+
+      {/* Composition: overall = 0.50·A + 0.20·B + 0.30·C — the visual "why 86" */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        {scoreResult.gates.map((g) => (
+          <div
+            key={g.id}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              padding: '7px 9px',
+              border: '0.5px solid var(--border)',
+              borderRadius: 10,
+              background: 'var(--card)',
+            }}
+          >
+            <span className="mono" style={{ fontSize: '0.58rem', color: 'var(--muted)', letterSpacing: '0.05em' }}>
+              GATE {g.id}
+            </span>
+            <span className="mono" style={{ fontSize: '0.92rem', fontWeight: 500, color: 'var(--ink)' }}>
+              {g.score}
+              <span style={{ fontSize: '0.58rem', color: 'var(--muted)', marginLeft: 4 }}>
+                × {g.weight.toFixed(2)}
+              </span>
+            </span>
+            <ScoreMeter score={g.score} tone={GATE_TONE[g.status]} height={3} />
+          </div>
+        ))}
       </div>
 
       {/* Red-flag banner (admit case) — names the red flag(s) from the engine */}
@@ -397,43 +449,50 @@ function GateRow({ gate, defaultOpen }: { gate: Gate; defaultOpen: boolean }) {
         aria-expanded={open}
         style={{
           width: '100%',
-          background: 'transparent',
+          background: open ? 'var(--card)' : 'transparent',
           border: 'none',
-          padding: 11,
+          padding: '11px 12px',
           display: 'flex',
-          alignItems: 'center',
-          gap: 10,
+          flexDirection: 'column',
+          gap: 8,
           textAlign: 'left',
+          transition: 'background var(--dur-fast) var(--ease-out)',
         }}
       >
-        <span
-          className={`${GATE_STATUS_CLASS[gate.status]}`}
-          aria-hidden="true"
-          style={{
-            width: 18,
-            height: 18,
-            borderRadius: '50%',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 9,
-            flexShrink: 0,
-          }}
-        >
-          {GATE_STATUS_ICON[gate.status]}
-        </span>
-        <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <span className="mono" style={{ fontSize: '0.62rem', color: 'var(--muted)' }}>
-            Gate {gate.id}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+          <span
+            className={`${GATE_STATUS_CLASS[gate.status]}`}
+            aria-hidden="true"
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: '50%',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 9,
+              flexShrink: 0,
+            }}
+          >
+            {GATE_STATUS_ICON[gate.status]}
           </span>
-          <span style={{ fontSize: '0.86rem', color: 'var(--ink)' }}>{gate.label}</span>
+          <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <span className="mono" style={{ fontSize: '0.6rem', color: 'var(--muted)', letterSpacing: '0.06em' }}>
+              Gate {gate.id} · weight {gate.weight.toFixed(2)}
+            </span>
+            <span style={{ fontSize: '0.88rem', color: 'var(--ink)' }}>{gate.label}</span>
+          </span>
+          <span
+            className="mono"
+            style={{ fontSize: '1.05rem', fontWeight: 500, color: 'var(--ink)', fontVariant: 'tabular-nums' }}
+          >
+            {gate.score}
+          </span>
+          <span aria-hidden="true" className="mono" style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
+            {open ? '▾' : '▸'}
+          </span>
         </span>
-        <span className="mono" style={{ fontSize: '0.96rem', color: 'var(--ink)', fontVariant: 'tabular-nums' }}>
-          {gate.score}
-        </span>
-        <span aria-hidden="true" className="mono" style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
-          {open ? '▾' : '▸'}
-        </span>
+        <ScoreMeter score={gate.score} tone={GATE_TONE[gate.status]} />
       </button>
 
       {open && (
@@ -453,32 +512,42 @@ function fmtValue(v: Contribution['value']): string {
   return String(v);
 }
 
+function valueLabel(c: Contribution): string {
+  const v = fmtValue(c.value);
+  return c.unit && typeof c.value === 'number' ? `${v}${c.unit === '%' || c.unit === '°C' ? '' : ' '}${c.unit}` : v;
+}
+
 function ContributionRow({ c }: { c: Contribution }) {
   return (
     <div
       style={{
-        padding: '9px 11px',
+        padding: '10px 12px',
         borderTop: '0.5px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 6,
+        gap: 8,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span className="mono" style={{ fontSize: '0.74rem', color: 'var(--ink)', minWidth: 150 }}>
-          {c.field}
-        </span>
-        <span className="mono" style={{ fontSize: '0.74rem', color: 'var(--slate-text)' }}>
-          {fmtValue(c.value)}
+      {/* signal name + measured value + status */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: '0.82rem', color: 'var(--ink)', fontWeight: 500 }}>{c.label}</span>
+        <span className="mono" style={{ fontSize: '0.82rem', color: 'var(--slate-text)' }}>
+          {valueLabel(c)}
         </span>
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
           <StatusChip status={c.status} />
-          <Chip tone="slate">
-            {c.points} pts · w {c.weight.toFixed(2)}
-          </Chip>
+          {c.weight > 0 && (
+            <span className="mono" style={{ fontSize: '0.62rem', color: 'var(--muted)' }}>
+              {c.points} pts · w {c.weight.toFixed(2)}
+            </span>
+          )}
         </span>
       </div>
-      <div style={{ fontSize: '0.78rem', color: 'var(--muted)', lineHeight: 1.4 }}>{c.note}</div>
+
+      {/* the threshold ladder — where the value sits across in/borderline/out */}
+      <ThresholdLadder range={c.range} status={c.status} valueLabel={valueLabel(c)} />
+
+      <div style={{ fontSize: '0.78rem', color: 'var(--muted)', lineHeight: 1.45 }}>{c.note}</div>
     </div>
   );
 }
@@ -526,55 +595,68 @@ function ActionRow({
   onAccept,
   onOverrideToAdmit,
   decisionLog,
+  decision,
 }: {
   scoreResult: ScoreResult;
   onAccept: () => void;
   onOverrideToAdmit: () => void;
   decisionLog: string | null;
+  decision: Decision | null;
 }) {
-  // Both buttons are IDENTICAL: outline only, neither filled, neither colored.
-  const btnStyle: CSSProperties = {
-    border: '0.5px solid var(--border)',
-    background: 'var(--card)',
-    color: 'var(--ink)',
-    borderRadius: 'var(--radius-pill)',
-    padding: '9px 18px',
-    fontWeight: 500,
-    fontSize: '0.86rem',
-  };
+  const locked = decision !== null;
 
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 14,
-          flexWrap: 'wrap',
-        }}
-      >
-        <span className="mono" style={{ fontSize: '0.82rem', color: 'var(--ink)' }}>
-          {RECOMMENDATION[scoreResult.band]}
-        </span>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button style={btnStyle} onClick={onOverrideToAdmit}>
-            Override to admit
-          </button>
-          <button style={btnStyle} onClick={onAccept}>
-            Accept &amp; hand off
-          </button>
-        </div>
+      <span className="mono" style={{ fontSize: '0.78rem', color: 'var(--ink)' }}>
+        {RECOMMENDATION[scoreResult.band]}
+      </span>
+
+      {/* Two IDENTICAL buttons (iron rule: equal weight, neither filled/colored). */}
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button
+          className="btn-action"
+          onClick={onOverrideToAdmit}
+          disabled={locked}
+          aria-pressed={decision === 'admit'}
+        >
+          {decision === 'admit' && <span aria-hidden="true">✓</span>}
+          Override to admit
+        </button>
+        <button
+          className="btn-action"
+          onClick={onAccept}
+          disabled={locked}
+          aria-pressed={decision === 'home'}
+        >
+          {decision === 'home' && <span aria-hidden="true">✓</span>}
+          Accept &amp; hand off
+        </button>
       </div>
 
       {decisionLog && (
         <div
-          className="mono"
-          style={{ fontSize: '0.72rem', color: 'var(--slate-text)', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-          role="status"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            flexWrap: 'wrap',
+            paddingTop: 2,
+          }}
         >
-          <span aria-hidden="true">✓</span>
-          {decisionLog}
+          <span
+            className="mono"
+            style={{ fontSize: '0.72rem', color: 'var(--slate-text)', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            role="status"
+          >
+            <span aria-hidden="true">✓</span>
+            {decisionLog}
+          </span>
+          {locked && (
+            <span className="mono" style={{ fontSize: '0.66rem', color: 'var(--muted)' }}>
+              decision locked · reset to change
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -616,6 +698,7 @@ export default function TriageView({
   onAccept,
   onOverrideToAdmit,
   decisionLog,
+  decision,
 }: TriageViewProps) {
   // The gate with the dominant deduction defaults open (PRD §4.4).
   const dominantGateId = scoreResult
@@ -673,6 +756,7 @@ export default function TriageView({
                 onAccept={onAccept}
                 onOverrideToAdmit={onOverrideToAdmit}
                 decisionLog={decisionLog}
+                decision={decision}
               />
             </>
           )}

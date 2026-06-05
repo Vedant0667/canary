@@ -12,6 +12,7 @@ import { scoreEligibility, assessTrend } from './engine/scoring';
 import { Stepper } from './components/primitives';
 import type { Step } from './components/primitives';
 import TriageView from './views/TriageView';
+import type { Decision } from './views/TriageView';
 import HandoffView from './views/HandoffView';
 import DashboardView from './views/DashboardView';
 
@@ -25,11 +26,17 @@ interface DemoState {
   day: number;
   forceFallback: boolean;
   view: View;
-  decisionLog: string | null;
+  // Per-patient logged decision. Once set, that patient's action row locks until Reset.
+  decisions: Record<string, Decision>;
   telehealthScheduled: boolean;
   extracting: boolean;
   source: 'live' | 'cache';
 }
+
+const DECISION_LOG: Record<Decision, string> = {
+  home: 'Decision: home · Dr. demo · 14:02 · logged',
+  admit: 'Decision: admit · Dr. demo · 14:02 · logged',
+};
 
 const STEPS: Step[] = [
   { id: 'triage', label: 'Triage' },
@@ -51,7 +58,7 @@ export default function App() {
     day: 1,
     forceFallback: false,
     view: 'triage',
-    decisionLog: null,
+    decisions: {},
     telehealthScheduled: false,
     extracting: true,
     source: 'cache',
@@ -118,9 +125,8 @@ export default function App() {
       setState((s) => ({
         ...s,
         packetId: id,
-        // Switching the patient invalidates the downstream flow.
+        // Each patient starts back at triage; their logged decision persists.
         handoffSent: false,
-        decisionLog: null,
         telehealthScheduled: false,
         day: 1,
         view: 'triage',
@@ -134,23 +140,27 @@ export default function App() {
   );
 
   const onAccept = useCallback(() => {
-    setState((s) => ({
-      ...s,
-      handoffSent: false, // unlock Hand-off via decisionLog; Send gates Monitoring
-      decisionLog: 'Decision: home · Dr. demo · 14:02 · logged',
-      view: 'handoff',
-    }));
+    // Home decision → log it for THIS patient and move to Hand-off (Send gates Monitoring).
+    setState((s) =>
+      s.decisions[s.packetId]
+        ? s // already decided — locked
+        : { ...s, decisions: { ...s.decisions, [s.packetId]: 'home' }, view: 'handoff' },
+    );
   }, []);
 
   const onOverrideToAdmit = useCallback(() => {
-    setState((s) => ({
-      ...s,
-      decisionLog: 'Decision: admit · Dr. demo · 14:02 · logged',
-    }));
+    // Admit decision → log it for THIS patient; does NOT unlock the home-care flow.
+    setState((s) =>
+      s.decisions[s.packetId]
+        ? s
+        : { ...s, decisions: { ...s.decisions, [s.packetId]: 'admit' } },
+    );
   }, []);
 
   const onSend = useCallback(() => {
-    setState((s) => ({ ...s, handoffSent: true, view: 'monitoring' }));
+    // Mark sent (unlocks Monitoring in the stepper) but STAY on Hand-off so the
+    // FHIR transfer animation is visible. The user advances when ready.
+    setState((s) => ({ ...s, handoffSent: true }));
   }, []);
 
   const onAdvanceDay = useCallback(() => {
@@ -166,11 +176,26 @@ export default function App() {
     setState((s) => ({ ...s, view: VIEW_BY_INDEX[index] }));
   }, []);
 
-  // --- derived: stepper unlock ---------------------------------------------
-  // Hand-off unlocks after Accept (a home decision was logged); Monitoring after Send.
-  const acceptedHome = state.decisionLog === 'Decision: home · Dr. demo · 14:02 · logged';
+  const onReset = useCallback(() => {
+    // Clear all decisions and the downstream flow; keep the current packet loaded.
+    setState((s) => ({
+      ...s,
+      decisions: {},
+      handoffSent: false,
+      telehealthScheduled: false,
+      day: 1,
+      view: 'triage',
+    }));
+  }, []);
+
+  // --- derived: current-patient decision + stepper unlock ------------------
+  const decision = state.decisions[state.packetId] ?? null;
+  const decisionLog = decision ? DECISION_LOG[decision] : null;
+  const anyDecided = Object.keys(state.decisions).length > 0;
+
+  // Hand-off unlocks when this patient is accepted home; Monitoring after Send.
   let unlockedCount = 1;
-  if (acceptedHome) unlockedCount = 2;
+  if (decision === 'home') unlockedCount = 2;
   if (state.handoffSent) unlockedCount = 3;
 
   const currentIndex = INDEX_BY_VIEW[state.view];
@@ -240,6 +265,11 @@ export default function App() {
             unlockedCount={unlockedCount}
             onStep={onStep}
           />
+          {anyDecided && (
+            <button className="btn-ghost" onClick={onReset} title="Clear all decisions and restart the demo">
+              <span aria-hidden="true">↻</span> Reset demo
+            </button>
+          )}
         </div>
       </header>
 
@@ -255,7 +285,8 @@ export default function App() {
           onSelectPacket={onSelectPacket}
           onAccept={onAccept}
           onOverrideToAdmit={onOverrideToAdmit}
-          decisionLog={state.decisionLog}
+          decisionLog={decisionLog}
+          decision={decision}
         />
       )}
 
@@ -265,6 +296,7 @@ export default function App() {
           scoreResult={state.scoreResult}
           sent={state.handoffSent}
           onSend={onSend}
+          onContinue={() => onStep(2)}
         />
       )}
 

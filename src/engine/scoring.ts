@@ -9,6 +9,7 @@ import type {
   TierResult,
   Gate,
   Contribution,
+  ThresholdRange,
   RedFlag,
   RedFlagCode,
   SignalStatus,
@@ -65,14 +66,27 @@ function redFlags(record: PatientRecord): RedFlag[] {
 // Contribution helper.
 // ---------------------------------------------------------------------------
 
-function contrib(
-  field: string,
-  value: Contribution['value'],
-  status: SignalStatus,
-  weight: number,
-  note: string,
-): Contribution {
-  return { field, value, status, points: POINTS[status], weight, note };
+function contrib(args: {
+  field: string;
+  label: string;
+  value: Contribution['value'];
+  unit?: string;
+  status: SignalStatus;
+  weight: number;
+  range: ThresholdRange;
+  note: string;
+}): Contribution {
+  return {
+    field: args.field,
+    label: args.label,
+    value: args.value,
+    unit: args.unit,
+    status: args.status,
+    points: POINTS[args.status],
+    weight: args.weight,
+    range: args.range,
+    note: args.note,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +101,7 @@ function gateA(record: PatientRecord): Gate {
   // spo2_pct — weight 0.20
   {
     const x = v.spo2_pct;
+    const range: ThresholdRange = { in: '≥ 94', borderline: '92–93', out: '< 92' };
     let status: SignalStatus;
     let note: string;
     if (x == null) {
@@ -94,7 +109,7 @@ function gateA(record: PatientRecord): Gate {
       note = 'SpO₂ not recorded — treated as out of range';
     } else if (x >= 94) {
       status = 'in';
-      note = `SpO₂ ${x}% — well oxygenated`;
+      note = `SpO₂ ${x}% — well oxygenated, comfortably clear of the 94% floor`;
     } else if (x >= 92) {
       status = 'borderline';
       note = `SpO₂ ${x}% — mildly low, watch closely`;
@@ -102,12 +117,13 @@ function gateA(record: PatientRecord): Gate {
       status = 'out';
       note = `SpO₂ ${x}% — below home-manageable floor`;
     }
-    c.push(contrib('spo2_pct', x, status, 0.2, note));
+    c.push(contrib({ field: 'spo2_pct', label: 'SpO₂', value: x, unit: '%', status, weight: 0.2, range, note }));
   }
 
   // weight_delta_72h_lb — weight 0.20
   {
     const x = v.weight_delta_72h_lb;
+    const range: ThresholdRange = { in: '< 2', borderline: '2–4', out: '> 4' };
     let status: SignalStatus;
     let note: string;
     if (x == null) {
@@ -118,17 +134,18 @@ function gateA(record: PatientRecord): Gate {
       note = `Weight up ${x} lb over 72h — stable fluid balance`;
     } else if (x <= 4) {
       status = 'borderline';
-      note = `Weight up ${x} lb over 72h — early fluid signal, within home-manageable range`;
+      note = `Weight up ${x} lb over 72h — early fluid signal, still within the home-manageable band`;
     } else {
       status = 'out';
       note = `Weight up ${x} lb over 72h — rapid fluid gain`;
     }
-    c.push(contrib('weight_delta_72h_lb', x, status, 0.2, note));
+    c.push(contrib({ field: 'weight_delta_72h_lb', label: 'Weight Δ 72h', value: x, unit: 'lb', status, weight: 0.2, range, note }));
   }
 
   // hr_bpm — weight 0.15
   {
     const x = v.hr_bpm;
+    const range: ThresholdRange = { in: '50–100', borderline: '45–49 / 101–110', out: '< 45 / > 110' };
     let status: SignalStatus;
     let note: string;
     if (x == null) {
@@ -144,12 +161,13 @@ function gateA(record: PatientRecord): Gate {
       status = 'out';
       note = `Heart rate ${x} bpm — outside safe range`;
     }
-    c.push(contrib('hr_bpm', x, status, 0.15, note));
+    c.push(contrib({ field: 'hr_bpm', label: 'Heart rate', value: x, unit: 'bpm', status, weight: 0.15, range, note }));
   }
 
   // bp_systolic — weight 0.15
   {
     const x = v.bp_systolic;
+    const range: ThresholdRange = { in: '90–160', borderline: '161–180', out: '< 90 / > 180' };
     let status: SignalStatus;
     let note: string;
     if (x == null) {
@@ -165,13 +183,14 @@ function gateA(record: PatientRecord): Gate {
       status = 'out';
       note = `Systolic BP ${x} — outside safe range`;
     }
-    c.push(contrib('bp_systolic', x, status, 0.15, note));
+    c.push(contrib({ field: 'bp_systolic', label: 'Systolic BP', value: x, unit: 'mmHg', status, weight: 0.15, range, note }));
   }
 
   // symptoms (worst of dyspnea / edema) — weight 0.15
   {
     const dyspnea = s.dyspnea;
     const edema = s.edema;
+    const range: ThresholdRange = { in: 'none', borderline: 'exertional / edema↑', out: 'at rest' };
     let status: SignalStatus;
     let note: string;
     if (dyspnea == null && edema == null) {
@@ -196,18 +215,19 @@ function gateA(record: PatientRecord): Gate {
     // value: a compact worst-of label.
     const value =
       status === 'out'
-        ? 'dyspnea at_rest'
+        ? 'at rest'
         : status === 'borderline'
           ? dyspnea === 'exertional'
-            ? 'dyspnea exertional'
-            : 'edema worsening'
+            ? 'exertional'
+            : 'edema↑'
           : 'stable';
-    c.push(contrib('symptoms', value, status, 0.15, note));
+    c.push(contrib({ field: 'symptoms', label: 'Symptoms', value, status, weight: 0.15, range, note }));
   }
 
   // resp_rate — weight 0.10
   {
     const x = v.resp_rate;
+    const range: ThresholdRange = { in: '≤ 20', borderline: '21–24', out: '> 24' };
     let status: SignalStatus;
     let note: string;
     if (x == null) {
@@ -223,12 +243,13 @@ function gateA(record: PatientRecord): Gate {
       status = 'out';
       note = `Respiratory rate ${x} — tachypneic`;
     }
-    c.push(contrib('resp_rate', x, status, 0.1, note));
+    c.push(contrib({ field: 'resp_rate', label: 'Resp. rate', value: x, unit: '/min', status, weight: 0.1, range, note }));
   }
 
   // temp_c — weight 0.05
   {
     const x = v.temp_c;
+    const range: ThresholdRange = { in: '< 38.0', borderline: '38.0–38.5', out: '> 38.5' };
     let status: SignalStatus;
     let note: string;
     if (x == null) {
@@ -244,7 +265,7 @@ function gateA(record: PatientRecord): Gate {
       status = 'out';
       note = `Temp ${x}°C — febrile`;
     }
-    c.push(contrib('temp_c', x, status, 0.05, note));
+    c.push(contrib({ field: 'temp_c', label: 'Temperature', value: x, unit: '°C', status, weight: 0.05, range, note }));
   }
 
   const score = weightedAverage(c);
@@ -271,24 +292,27 @@ function gateB(record: PatientRecord): Gate {
   const c: Contribution[] = [];
   let score = 100;
 
+  const requiredRange: ThresholdRange = { in: 'present', borderline: 'deliverable −15', out: 'missing −40' };
+  const optionalRange: ThresholdRange = { in: 'present', borderline: 'missing −10', out: '—' };
+
   for (const d of REQUIRED_DEVICES) {
     if (have.has(d)) {
-      c.push(contrib(d, true, 'in', 0, `${DEVICE_LABEL[d]} available — required device present`));
+      c.push(contrib({ field: d, label: DEVICE_LABEL[d], value: 'present', status: 'in', weight: 0, range: requiredRange, note: `${DEVICE_LABEL[d]} available — required device present` }));
     } else if (deliverable.has(d)) {
       score -= 15;
-      c.push(contrib(d, 'deliverable_today', 'borderline', 0, `${DEVICE_LABEL[d]} not on hand but deliverable today (−15)`));
+      c.push(contrib({ field: d, label: DEVICE_LABEL[d], value: 'deliverable', status: 'borderline', weight: 0, range: requiredRange, note: `${DEVICE_LABEL[d]} not on hand but deliverable today (−15)` }));
     } else {
       score -= 40;
-      c.push(contrib(d, false, 'out', 0, `${DEVICE_LABEL[d]} missing — required device absent (−40)`));
+      c.push(contrib({ field: d, label: DEVICE_LABEL[d], value: 'missing', status: 'out', weight: 0, range: requiredRange, note: `${DEVICE_LABEL[d]} missing — required device absent (−40)` }));
     }
   }
 
   for (const d of OPTIONAL_DEVICES) {
     if (have.has(d)) {
-      c.push(contrib(d, true, 'in', 0, `${DEVICE_LABEL[d]} available — optional device present`));
+      c.push(contrib({ field: d, label: DEVICE_LABEL[d], value: 'present', status: 'in', weight: 0, range: optionalRange, note: `${DEVICE_LABEL[d]} available — optional device present` }));
     } else {
       score -= 10;
-      c.push(contrib(d, false, 'borderline', 0, `${DEVICE_LABEL[d]} missing — optional, reduces monitoring fidelity (−10)`));
+      c.push(contrib({ field: d, label: DEVICE_LABEL[d], value: 'missing', status: 'borderline', weight: 0, range: optionalRange, note: `${DEVICE_LABEL[d]} missing — optional, reduces monitoring fidelity (−10)` }));
     }
   }
 
@@ -308,6 +332,7 @@ function gateC(record: PatientRecord): Gate {
   // caregiver
   {
     const x = h.caregiver;
+    const range: ThresholdRange = { in: 'full-time', borderline: 'part-time −15', out: 'none −40' };
     let deduct = 0;
     let status: SignalStatus = 'in';
     let note: string;
@@ -324,50 +349,57 @@ function gateC(record: PatientRecord): Gate {
       note = x === null ? 'Caregiver status unknown — treated as none (−40)' : 'No caregiver in home (−40)';
     }
     score -= deduct;
-    c.push(contrib('caregiver', x, status, 0, note));
+    c.push(contrib({ field: 'caregiver', label: 'Caregiver', value: x ?? 'none', status, weight: 0, range, note }));
   }
 
   // housing_stable
   {
     const x = h.housing_stable;
+    const range: ThresholdRange = { in: 'stable', borderline: '—', out: 'unstable −30' };
     const unstable = x === false || x == null;
     const deduct = unstable ? 30 : 0;
     score -= deduct;
     c.push(
-      contrib(
-        'housing_stable',
-        x,
-        unstable ? 'out' : 'in',
-        0,
-        unstable
+      contrib({
+        field: 'housing_stable',
+        label: 'Housing',
+        value: x === false ? 'unstable' : x == null ? 'unknown' : 'stable',
+        status: unstable ? 'out' : 'in',
+        weight: 0,
+        range,
+        note: unstable
           ? (x === null ? 'Housing stability unknown — treated as unstable (−30)' : 'Housing not stable (−30)')
           : 'Housing stable',
-      ),
+      }),
     );
   }
 
   // has_power_refrigeration
   {
     const x = h.has_power_refrigeration;
+    const range: ThresholdRange = { in: 'available', borderline: '—', out: 'absent −25' };
     const missing = x === false || x == null;
     const deduct = missing ? 25 : 0;
     score -= deduct;
     c.push(
-      contrib(
-        'has_power_refrigeration',
-        x,
-        missing ? 'out' : 'in',
-        0,
-        missing
+      contrib({
+        field: 'has_power_refrigeration',
+        label: 'Power / fridge',
+        value: x === false ? 'absent' : x == null ? 'unknown' : 'available',
+        status: missing ? 'out' : 'in',
+        weight: 0,
+        range,
+        note: missing
           ? (x === null ? 'Power/refrigeration unknown — treated as absent (−25)' : 'No reliable power/refrigeration (−25)')
           : 'Power and refrigeration available',
-      ),
+      }),
     );
   }
 
   // connectivity
   {
     const x = h.connectivity;
+    const range: ThresholdRange = { in: 'wi-fi', borderline: 'cell-only −8', out: 'none −35' };
     let deduct = 0;
     let status: SignalStatus = 'in';
     let note: string;
@@ -383,12 +415,13 @@ function gateC(record: PatientRecord): Gate {
       note = x === null ? 'Connectivity unknown — treated as none (−35)' : 'No connectivity — cannot transmit readings (−35)';
     }
     score -= deduct;
-    c.push(contrib('connectivity', x, status, 0, note));
+    c.push(contrib({ field: 'connectivity', label: 'Connectivity', value: x ?? 'none', status, weight: 0, range, note }));
   }
 
   // med_self_admin
   {
     const x = h.med_self_admin;
+    const range: ThresholdRange = { in: 'self', borderline: 'assisted −10', out: 'no −25' };
     let deduct = 0;
     let status: SignalStatus = 'in';
     let note: string;
@@ -404,12 +437,13 @@ function gateC(record: PatientRecord): Gate {
       note = x === null ? 'Medication self-admin unknown — treated as no (−25)' : 'Cannot self-administer medications (−25)';
     }
     score -= deduct;
-    c.push(contrib('med_self_admin', x, status, 0, note));
+    c.push(contrib({ field: 'med_self_admin', label: 'Med self-admin', value: x ?? 'no', status, weight: 0, range, note }));
   }
 
   // fall_risk
   {
     const x = h.fall_risk;
+    const range: ThresholdRange = { in: 'low', borderline: 'moderate −6', out: 'high −25' };
     let deduct = 0;
     let status: SignalStatus = 'in';
     let note: string;
@@ -425,7 +459,7 @@ function gateC(record: PatientRecord): Gate {
       note = x === null ? 'Fall risk unknown — treated as high (−25)' : 'High fall risk (−25)';
     }
     score -= deduct;
-    c.push(contrib('fall_risk', x, status, 0, note));
+    c.push(contrib({ field: 'fall_risk', label: 'Fall risk', value: x ?? 'high', status, weight: 0, range, note }));
   }
 
   score = Math.max(0, score);

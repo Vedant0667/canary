@@ -3,7 +3,7 @@
 // a tier is ALWAYS color + icon + word. Consume these; do not re-implement.
 
 import type { ReactNode } from 'react';
-import type { Band, SignalStatus, Tier } from '../types';
+import type { Band, SignalStatus, ThresholdRange, Tier } from '../types';
 
 // --- Tier / band visual metadata -------------------------------------------
 
@@ -93,6 +93,127 @@ const STATUS_WORD: Record<SignalStatus, string> = {
 export function StatusChip({ status }: { status: SignalStatus }) {
   return <Chip tone={STATUS_TONE[status]}>{STATUS_WORD[status]}</Chip>;
 }
+
+// --- Threshold ladder -------------------------------------------------------
+// The signature CareLoop component. Renders a signal's in / borderline / out
+// thresholds as three zones; the patient's value sits in its zone, tinted with
+// the matching tier. Makes "why this score" inspectable and proves, at a glance,
+// that no individual threshold was breached.
+
+const LADDER_ZONES: { key: SignalStatus; word: string; cls: string }[] = [
+  { key: 'in', word: 'in range', cls: 'tier-green' },
+  { key: 'borderline', word: 'borderline', cls: 'tier-yellow' },
+  { key: 'out', word: 'out of range', cls: 'tier-red' },
+];
+
+export function ThresholdLadder({
+  range,
+  status,
+  valueLabel,
+}: {
+  range: ThresholdRange;
+  status: SignalStatus;
+  valueLabel: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={`Thresholds — patient is ${LADDER_ZONES.find((z) => z.key === status)?.word}`}
+      style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}
+    >
+      {LADDER_ZONES.map((z) => {
+        const active = z.key === status;
+        const bound = range[z.key];
+        return (
+          <div
+            key={z.key}
+            className={active ? z.cls : undefined}
+            style={{
+              borderRadius: 8,
+              padding: '5px 8px',
+              minWidth: 0,
+              border: active ? 'none' : '0.5px solid var(--border)',
+              opacity: active ? 1 : bound === '—' ? 0.32 : 0.55,
+              transition: 'opacity var(--dur-fast) var(--ease-out)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 1,
+            }}
+          >
+            <span
+              className="mono"
+              style={{
+                fontSize: '0.54rem',
+                letterSpacing: '0.07em',
+                textTransform: 'uppercase',
+                opacity: 0.75,
+              }}
+            >
+              {z.word}
+            </span>
+            <span
+              className="mono"
+              style={{
+                fontSize: active ? '0.82rem' : '0.74rem',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {active ? valueLabel : bound}
+            </span>
+            {active && (
+              <span className="mono" style={{ fontSize: '0.56rem', opacity: 0.8 }}>
+                threshold {bound}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// --- Score meter (thin 0–100 bar, tier-toned) -------------------------------
+export function ScoreMeter({
+  score,
+  tone,
+  height = 4,
+  animate = true,
+}: {
+  score: number;
+  tone: ChipTone;
+  height?: number;
+  animate?: boolean;
+}) {
+  return (
+    <div
+      style={{ height, borderRadius: height, background: 'var(--border)', overflow: 'hidden' }}
+      role="meter"
+      aria-valuenow={score}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <div
+        style={{
+          width: `${Math.max(0, Math.min(100, score))}%`,
+          height: '100%',
+          background: CHIP_STYLES[tone].color,
+          transformOrigin: 'left',
+          animation: animate ? 'cl-grow var(--dur-slow) var(--ease-out) both' : undefined,
+        }}
+      />
+    </div>
+  );
+}
+
+// Map a gate/band status onto a chip tone.
+export const STATUS_TONE_MAP: Record<SignalStatus, ChipTone> = {
+  in: 'green',
+  borderline: 'yellow',
+  out: 'red',
+};
 
 // --- Stepper (top nav) ------------------------------------------------------
 

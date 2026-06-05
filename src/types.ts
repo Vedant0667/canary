@@ -72,13 +72,25 @@ export interface RedFlag {
   label: string; // e.g. "SpO₂ 91 — below home-manageable floor"
 }
 
+// The in / borderline / out thresholds for a signal, as short human-readable
+// boundary labels. Rendered as a 3-segment "threshold ladder" so a clinician can
+// see exactly where the patient's value sits — and prove no single one was breached.
+export interface ThresholdRange {
+  in: string; // e.g. "≥ 94"
+  borderline: string; // e.g. "92–93"
+  out: string; // e.g. "< 92"
+}
+
 // One record per signal / checklist item — ALWAYS emitted, in-range ones too.
 export interface Contribution {
   field: string;
+  label: string; // human-readable signal name, e.g. "SpO₂", "Caregiver"
   value: string | number | boolean | null;
+  unit?: string; // e.g. "%", "bpm", "lb/72h"
   status: SignalStatus;
   points: number; // 0..100 signal points
   weight: number; // share of the gate
+  range: ThresholdRange; // the in/borderline/out thresholds for this signal
   note: string; // plain-English explanation rendered in the gate expander
 }
 

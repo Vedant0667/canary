@@ -19,6 +19,7 @@ interface HandoffViewProps {
   scoreResult: ScoreResult;
   sent: boolean;
   onSend: () => void;
+  onContinue: () => void; // advance to monitoring once the transfer is visible
 }
 
 // ---------------------------------------------------------------------------
@@ -542,7 +543,7 @@ function TransferBeam({ active }: { active: boolean }) {
 // View
 // ---------------------------------------------------------------------------
 
-export default function HandoffView({ record, scoreResult, sent, onSend }: HandoffViewProps) {
+export default function HandoffView({ record, scoreResult, sent, onSend, onContinue }: HandoffViewProps) {
   void scoreResult; // band drives upstream gating; not rendered clinically here.
   const fields = useMemo(() => intakeFields(record), [record]);
   const [showRaw, setShowRaw] = useState(false);
@@ -665,13 +666,20 @@ export default function HandoffView({ record, scoreResult, sent, onSend }: Hando
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
           padding: '8px 12px',
         }}
       >
         <span className="mono" style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>
           today, this hand-off is a fax and a phone call
         </span>
+        {complete && (
+          <button className="btn-primary cl-rise" onClick={onContinue}>
+            Continue to monitoring ▸
+          </button>
+        )}
       </div>
     </div>
   );

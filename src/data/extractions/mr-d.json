@@ -1,0 +1,30 @@
+{
+  "name": "Robert J. Delgado",
+  "age": 68,
+  "mrn": "4471988",
+  "condition": "CHF",
+  "vitals": {
+    "hr_bpm": 104,
+    "bp_systolic": 138,
+    "bp_diastolic": 86,
+    "spo2_pct": 93,
+    "resp_rate": 22,
+    "temp_c": 37.3,
+    "weight_lb": 196.5,
+    "weight_delta_72h_lb": 3.1
+  },
+  "symptoms": {
+    "dyspnea": "exertional",
+    "edema": "stable",
+    "chest_pain": false
+  },
+  "devices_available": ["scale", "bp_cuff", "pulse_ox"],
+  "home": {
+    "caregiver": "part_time",
+    "housing_stable": true,
+    "has_power_refrigeration": true,
+    "connectivity": "cell_only",
+    "med_self_admin": "assisted",
+    "fall_risk": "moderate"
+  }
+}

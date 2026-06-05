@@ -1,0 +1,30 @@
+{
+  "name": "Helen M. Kowalski",
+  "age": 81,
+  "mrn": "4472013",
+  "condition": "CHF",
+  "vitals": {
+    "hr_bpm": 88,
+    "bp_systolic": 128,
+    "bp_diastolic": 76,
+    "spo2_pct": 91,
+    "resp_rate": 20,
+    "temp_c": 37.0,
+    "weight_lb": 142.6,
+    "weight_delta_72h_lb": 1.2
+  },
+  "symptoms": {
+    "dyspnea": "exertional",
+    "edema": "stable",
+    "chest_pain": false
+  },
+  "devices_available": ["scale", "bp_cuff", "pulse_ox"],
+  "home": {
+    "caregiver": "none",
+    "housing_stable": true,
+    "has_power_refrigeration": true,
+    "connectivity": "cell_only",
+    "med_self_admin": "assisted",
+    "fall_risk": "high"
+  }
+}

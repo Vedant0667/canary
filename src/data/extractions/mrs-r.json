@@ -1,0 +1,30 @@
+{
+  "name": "Margaret A. Roberts",
+  "age": 72,
+  "mrn": "4471932",
+  "condition": "CHF",
+  "vitals": {
+    "hr_bpm": 78,
+    "bp_systolic": 132,
+    "bp_diastolic": 84,
+    "spo2_pct": 95,
+    "resp_rate": 18,
+    "temp_c": 37.1,
+    "weight_lb": 150.4,
+    "weight_delta_72h_lb": 2.4
+  },
+  "symptoms": {
+    "dyspnea": "exertional",
+    "edema": "stable",
+    "chest_pain": false
+  },
+  "devices_available": ["scale", "bp_cuff", "pulse_ox"],
+  "home": {
+    "caregiver": "full_time",
+    "housing_stable": true,
+    "has_power_refrigeration": true,
+    "connectivity": "wifi",
+    "med_self_admin": "assisted",
+    "fall_risk": "moderate"
+  }
+}

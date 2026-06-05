@@ -12,27 +12,29 @@ Implementation contract: `docs/superpowers/specs/2026-06-05-careloop-demo-design
 - [x] Design/architecture doc with file-ownership map
 - [x] Stub `App.tsx` so foundation compiles; initial commit
 
-## Phase 1 — Brainstorm (subagents)
-- [ ] 2 brainstorm agents surface implementation risks / divergent ideas; synthesize
+## Phase 1 — Brainstorm (subagents) — DONE
+- [x] 2 brainstorm agents (risk + polish lens) on the locked spec
 
-## Phase 2 — Execute (parallel subagents, disjoint files)
-- [ ] engine: `scoring.ts` + `scoring.test.ts` (3 cases green per spec §10–§12)
-- [ ] data: 3 packets (.md) + 3 cached extractions (.json) + `packets.ts` + `monitoring.ts`
-- [ ] extraction: `lib/extraction.ts` (live API + 6s timeout fallback)
-- [ ] view-triage: `TriageView.tsx` (hero screen — build airtight)
-- [ ] view-handoff: `HandoffView.tsx` (split-screen FHIR bundle transfer)
-- [ ] view-dashboard: `DashboardView.tsx` (day stepper, day-4 yellow moment)
-- [ ] integration: `App.tsx` wires state + engine + views + stepper + F-key
+## Phase 2 — Execute (parallel subagents, disjoint files) — DONE
+- [x] engine: `scoring.ts` + `scoring.test.ts` (Mrs R=86, Mr D=Watch, Ms K=Admit green)
+- [x] data: 3 packets (.md) + 3 cached extractions (.json) + `packets.ts` + `monitoring.ts`
+- [x] extraction: `lib/extraction.ts` (live claude-sonnet-4-6 + 6s timeout → cache)
+- [x] view-triage: `TriageView.tsx` (hero screen)
+- [x] view-handoff: `HandoffView.tsx` (split-screen FHIR bundle transfer)
+- [x] view-dashboard: `DashboardView.tsx` (day stepper, day-4 yellow moment)
+- [x] integration: `App.tsx` wires state + engine + views + stepper + F-key
 
-## Phase 3 — Check (parallel subagents)
-- [ ] Engine correctness vs spec §10–§12 (run tests, read code)
-- [ ] Acceptance checklist (PRD §8) + build/typecheck
-- [ ] Design-system compliance vs PRD §6 (iron rules)
-- [ ] Numbers trace to contributions; no contradicting hardcoded copy
+## Phase 3 — Check (parallel subagents) — DONE
+- [x] Engine correctness vs spec §10–§12 (23/23 tests pass)
+- [x] Acceptance checklist (PRD §8) + build/typecheck (tsc + build clean)
+- [x] Design-system compliance vs PRD §6 (iron rules) — green banner → slate fixed
+- [x] Numbers trace to contributions; no contradicting hardcoded copy
 
-## Phase 4 — Fix (parallel subagents)
-- [ ] Fix each confirmed issue from Phase 3
+## Phase 4 — Fix (parallel subagents) — DONE
+- [x] Hand-off success banner moved off green tier palette → neutral slate
 
-## Phase 5 — Finalize (orchestrator)
-- [ ] `npm test` green, `npm run build` clean, dev server smoke test
-- [ ] Commit + push; write summary
+## Phase 5 — Finalize (orchestrator) — DONE
+- [x] `npm test` 23/23 green, `npm run build` clean, dev server smoke (all modules 200)
+- [x] Commit + push; summary written
+
+## Status: READY. `npm run dev` → demo-ready in one command. Press `F` for offline mode.

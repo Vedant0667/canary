@@ -711,6 +711,9 @@ export function assessTrend(baselineDays: Reading[], today: Reading): TierResult
     spo2_delta_vs_baseline: round1(dSpo2),
     hr_delta_vs_baseline: round1(dHr),
     all_values_in_range,
+    weight_in_range: !weightOutOfRange,
+    spo2_in_range: !spo2OutOfRange,
+    hr_in_range: !hrOutOfRange,
     reason,
   };
 }

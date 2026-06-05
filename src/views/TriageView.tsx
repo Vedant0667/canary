@@ -88,8 +88,8 @@ function EhrChrome() {
     <div
       className="mono"
       style={{
-        background: '#1a1714',
-        color: '#f4efe6',
+        background: 'var(--ink)',
+        color: 'var(--page)',
         borderRadius: 'var(--radius-card)',
         padding: '8px 14px',
         fontSize: '0.72rem',

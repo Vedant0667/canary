@@ -144,5 +144,11 @@ export interface TierResult {
   // True when tier is yellow/red but every absolute value is still in-range —
   // the "no threshold alarm would have fired yet" demo moment.
   all_values_in_range: boolean;
+  // Per-vital absolute-threshold verdicts (each independently derived by the
+  // engine, so the dashboard's three alarm cards render real per-signal truth
+  // rather than one shared flag).
+  weight_in_range: boolean;
+  spo2_in_range: boolean;
+  hr_in_range: boolean;
   reason: string;
 }

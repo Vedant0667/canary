@@ -22,12 +22,14 @@
   --slate-chip: #e1e7f0;
   --slate-text: #3e587a;
 
-  /* Tier colors (functional only — never decorative) */
-  --pass-text: #5e7b3f; /* green */
+  /* Tier colors (functional only — never decorative).
+   * -text values are tuned to clear 4.5:1 on their own -bg AND on card/page,
+   * so tier chips and the day-4 watch alert stay readable (a11y). */
+  --pass-text: #4d6731; /* green  — 4.9:1 on pass-bg */
   --pass-bg: #dce6cc;
-  --watch-text: #b5872f; /* amber */
+  --watch-text: #856016; /* amber — 4.6:1 on watch-bg */
   --watch-bg: #f0e6cc;
-  --admit-text: #a8553d; /* red */
+  --admit-text: #92452d; /* red   — 4.9:1 on admit-bg */
   --admit-bg: #ebd7ce;
 
   /* Type (design system §02). Display = Fraunces variable (Recoleta stand-in),

@@ -41,10 +41,19 @@ Prep meeting feedback:
 ### Phase 3 — Judging alignment (subagent)
 - [ ] JUDGING.md: map demo capabilities → Round 1 rubric (Functionality/Problem Alignment/UX) + beyond
 
-### Phase 4 — Check (parallel subagents)
-- [ ] Build + typecheck + tests green
-- [ ] Anti-hardcode audit: prove arbitrary input flows through real AI + real engine
-- [ ] Design-system compliance (fonts, color, no italics, craft)
+### Phase 4 — Check (parallel subagents) — DONE
+- [x] Build + typecheck + tests green (tsc 0, 23/23, vite build clean)
+- [x] Anti-hardcode audit: clean — no view re-derives a clinical verdict; extractLive is real, honest errors; engine is input-driven. (P2: dashboard shared in-range flag → fixed per-vital)
+- [x] Design-system audit: P0 watch-tier text contrast 2.61:1 (the day-4 alert!) → fixed; pass/admit text darkened; EhrChrome hexes → tokens; display weight override dropped
 
-### Phase 5 — Fix + finalize (orchestrator)
-- [ ] Resolve check findings, screenshot-verify, commit + push, update memory + lessons
+### Phase 5 — Fix + finalize (orchestrator) — DONE
+- [x] Darkened tier -text tokens to ≥4.5:1 on every bg (verified numerically)
+- [x] Engine emits per-vital weight/spo2/hr_in_range; dashboard renders each independently
+- [x] Wired "Notify physician" to a real acknowledged state (was no-op)
+- [x] Screenshot-verified triage / hand-off / day-4 monitoring; removed temp deep-link
+- [ ] Commit + push, update memory
+
+## Status: REDESIGN + DE-HARDCODE + RENAME COMPLETE.
+`npm run dev` → demo-ready. Press F to toggle offline/cached. Set VITE_ANTHROPIC_API_KEY
+for live extraction; "Paste a referral note" proves the live AI path on arbitrary input.
+See JUDGING.md for the rubric mapping + anti-hardcoding talking points.

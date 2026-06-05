@@ -73,9 +73,9 @@ export default function DashboardView({
   // Day-4 alert numbers derived from the engine's TierResult, never hardcoded.
   const day4 = tierByDay[3];
   const showAlert = day >= 4 && currentTier === 'yellow' && !!day4;
-  // The "no single threshold would have alarmed" proof comes straight from the
-  // engine flag — the view never re-derives a clinical verdict per vital.
-  const allInRange = !!day4?.all_values_in_range;
+  // The per-vital "within range" proof comes straight from the engine's own
+  // flags (day4.{weight,spo2,hr}_in_range) — the view never re-derives a
+  // clinical verdict.
 
   // Closing banner after telehealth scheduled and day 5 revealed.
   const showClose = telehealthScheduled && day >= 5 && currentTier === 'green';
@@ -93,6 +93,7 @@ export default function DashboardView({
   // latest revealed day by default; a click pins it until the next Advance.
   const [pinned, setPinned] = useState<number | null>(null);
   useEffect(() => setPinned(null), [day]); // advancing day re-follows the latest point
+  const [physicianNotified, setPhysicianNotified] = useState(false);
   const selectedIndex = pinned != null && pinned < revealedCount ? pinned : revealedCount - 1;
   const selectedPoint = MRS_R_TIMELINE[selectedIndex];
 
@@ -136,27 +137,28 @@ export default function DashboardView({
             alarm threshold:
           </p>
 
-          {/* Threshold proof — each tracked vital against its hard alarm line. The
-              "within range" truth comes from the engine's all_values_in_range flag,
-              never re-derived here (pure renderer). */}
+          {/* Threshold proof — each tracked vital against its hard alarm line.
+              Each "within range" verdict comes from the engine's own per-vital
+              flag (weight_in_range / spo2_in_range / hr_in_range), independently
+              derived — never re-computed here (pure renderer). */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             <AlarmCheck
               label="Weight Δ vs base"
               value={`${signed(day4.weight_delta_vs_baseline, 1)} lb`}
               alarm="alarm at ≥ +5 lb"
-              ok={allInRange}
+              ok={day4.weight_in_range}
             />
             <AlarmCheck
               label="SpO₂"
               value={`${latestReading.spo2_pct}%`}
               alarm="alarm at < 92%"
-              ok={allInRange}
+              ok={day4.spo2_in_range}
             />
             <AlarmCheck
               label="Heart rate"
               value={`${latestReading.hr_bpm} bpm`}
               alarm="alarm at > 130"
-              ok={allInRange}
+              ok={day4.hr_in_range}
             />
           </div>
 
@@ -169,8 +171,12 @@ export default function DashboardView({
             <button className="btn-action" onClick={onTelehealth} disabled={telehealthScheduled}>
               {telehealthScheduled ? '✓ Telehealth scheduled' : 'Schedule telehealth'}
             </button>
-            <button className="btn-action" onClick={() => {}} disabled={telehealthScheduled}>
-              Notify physician
+            <button
+              className="btn-action"
+              onClick={() => setPhysicianNotified(true)}
+              disabled={telehealthScheduled || physicianNotified}
+            >
+              {physicianNotified ? '✓ Physician notified' : 'Notify physician'}
             </button>
           </div>
         </section>
@@ -198,7 +204,7 @@ export default function DashboardView({
 
       {/* Header. */}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <h2 className="display" style={{ margin: 0, fontSize: '1.4rem', fontWeight: 400 }}>
+        <h2 className="display" style={{ margin: 0, fontSize: '1.4rem' }}>
           Home monitoring
         </h2>
         <span className="mono" style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>

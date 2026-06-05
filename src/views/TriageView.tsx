@@ -40,8 +40,8 @@ export interface TriageViewProps {
   extracting: boolean;
   source: 'live' | 'cache';
   onSelectPacket: (id: string) => void;
-  onAccept: () => void;
-  onOverrideToAdmit: () => void;
+  onDecideHome: () => void;
+  onDecideAdmit: () => void;
   decisionLog: string | null;
   // Once a decision is logged for this patient, the action row locks (PRD-extra:
   // no re-deciding without a reset). null = open.
@@ -592,18 +592,24 @@ const RECOMMENDATION: Record<ScoreResult['band'], string> = {
 
 function ActionRow({
   scoreResult,
-  onAccept,
-  onOverrideToAdmit,
+  onDecideHome,
+  onDecideAdmit,
   decisionLog,
   decision,
 }: {
   scoreResult: ScoreResult;
-  onAccept: () => void;
-  onOverrideToAdmit: () => void;
+  onDecideHome: () => void;
+  onDecideAdmit: () => void;
   decisionLog: string | null;
   decision: Decision | null;
 }) {
   const locked = decision !== null;
+  // Labels follow the recommendation: the disposition the engine recommends is
+  // the "Accept" action; the other is an "Override". Both stay equal weight, and
+  // the admit/home button positions are fixed (admit left, home right).
+  const admitRecommended = scoreResult.band === 'admit';
+  const admitLabel = admitRecommended ? 'Accept admission' : 'Override to admit';
+  const homeLabel = admitRecommended ? 'Override to home' : 'Accept & hand off';
 
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
@@ -611,25 +617,26 @@ function ActionRow({
         {RECOMMENDATION[scoreResult.band]}
       </span>
 
-      {/* Two IDENTICAL buttons (iron rule: equal weight, neither filled/colored). */}
+      {/* Two IDENTICAL buttons (iron rule: equal weight, neither filled/colored).
+          Left = admit disposition, right = home disposition. */}
       <div style={{ display: 'flex', gap: 10 }}>
         <button
           className="btn-action"
-          onClick={onOverrideToAdmit}
+          onClick={onDecideAdmit}
           disabled={locked}
           aria-pressed={decision === 'admit'}
         >
           {decision === 'admit' && <span aria-hidden="true">✓</span>}
-          Override to admit
+          {admitLabel}
         </button>
         <button
           className="btn-action"
-          onClick={onAccept}
+          onClick={onDecideHome}
           disabled={locked}
           aria-pressed={decision === 'home'}
         >
           {decision === 'home' && <span aria-hidden="true">✓</span>}
-          Accept &amp; hand off
+          {homeLabel}
         </button>
       </div>
 
@@ -695,8 +702,8 @@ export default function TriageView({
   extracting,
   source,
   onSelectPacket,
-  onAccept,
-  onOverrideToAdmit,
+  onDecideHome,
+  onDecideAdmit,
   decisionLog,
   decision,
 }: TriageViewProps) {
@@ -753,8 +760,8 @@ export default function TriageView({
 
               <ActionRow
                 scoreResult={scoreResult}
-                onAccept={onAccept}
-                onOverrideToAdmit={onOverrideToAdmit}
+                onDecideHome={onDecideHome}
+                onDecideAdmit={onDecideAdmit}
                 decisionLog={decisionLog}
                 decision={decision}
               />

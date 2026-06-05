@@ -139,8 +139,9 @@ export default function App() {
     [runExtraction],
   );
 
-  const onAccept = useCallback(() => {
-    // Home decision → log it for THIS patient and move to Hand-off (Send gates Monitoring).
+  const onDecideHome = useCallback(() => {
+    // Home disposition → log it for THIS patient and move to Hand-off (Send gates
+    // Monitoring). Works whether home is the recommendation or a documented override.
     setState((s) =>
       s.decisions[s.packetId]
         ? s // already decided — locked
@@ -148,8 +149,8 @@ export default function App() {
     );
   }, []);
 
-  const onOverrideToAdmit = useCallback(() => {
-    // Admit decision → log it for THIS patient; does NOT unlock the home-care flow.
+  const onDecideAdmit = useCallback(() => {
+    // Admit disposition → log it for THIS patient; does NOT unlock the home-care flow.
     setState((s) =>
       s.decisions[s.packetId]
         ? s
@@ -283,8 +284,8 @@ export default function App() {
           extracting={state.extracting}
           source={state.source}
           onSelectPacket={onSelectPacket}
-          onAccept={onAccept}
-          onOverrideToAdmit={onOverrideToAdmit}
+          onDecideHome={onDecideHome}
+          onDecideAdmit={onDecideAdmit}
           decisionLog={decisionLog}
           decision={decision}
         />

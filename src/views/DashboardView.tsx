@@ -73,6 +73,9 @@ export default function DashboardView({
   // Day-4 alert numbers derived from the engine's TierResult, never hardcoded.
   const day4 = tierByDay[3];
   const showAlert = day >= 4 && currentTier === 'yellow' && !!day4;
+  // The "no single threshold would have alarmed" proof comes straight from the
+  // engine flag — the view never re-derives a clinical verdict per vital.
+  const allInRange = !!day4?.all_values_in_range;
 
   // Closing banner after telehealth scheduled and day 5 revealed.
   const showClose = telehealthScheduled && day >= 5 && currentTier === 'green';
@@ -114,32 +117,46 @@ export default function DashboardView({
               Mrs. R · day {day} · forecast: rising 24–48h decompensation risk
             </span>
           </div>
+
+          {/* Focal verdict — the converging trend as a Fraunces headline number. */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+            <span
+              className="display"
+              style={{ fontSize: '2.4rem', lineHeight: 1, color: 'var(--watch-text)' }}
+            >
+              {signed(day4.weight_delta_vs_baseline, 1)} lb
+            </span>
+            <span className="mono" style={{ fontSize: '0.78rem', color: 'var(--watch-text)' }}>
+              weight vs days 1–2 baseline · SpO₂ {signed(day4.spo2_delta_vs_baseline)} · HR{' '}
+              {signed(day4.hr_delta_vs_baseline)}
+            </span>
+          </div>
           <p style={{ margin: 0, fontSize: '0.92rem', lineHeight: 1.5, color: 'var(--ink)' }}>
-            The trend is converging — weight {signed(day4.weight_delta_vs_baseline, 1)} lb vs
-            baseline with SpO₂ {signed(day4.spo2_delta_vs_baseline)} and HR{' '}
-            {signed(day4.hr_delta_vs_baseline)}. Yet every individual vital is still inside its
+            Three signals are converging at once — yet every individual vital is still inside its
             alarm threshold:
           </p>
 
-          {/* Threshold proof — each tracked vital against its hard alarm line. */}
+          {/* Threshold proof — each tracked vital against its hard alarm line. The
+              "within range" truth comes from the engine's all_values_in_range flag,
+              never re-derived here (pure renderer). */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             <AlarmCheck
               label="Weight Δ vs base"
               value={`${signed(day4.weight_delta_vs_baseline, 1)} lb`}
               alarm="alarm at ≥ +5 lb"
-              ok={day4.weight_delta_vs_baseline < 5}
+              ok={allInRange}
             />
             <AlarmCheck
               label="SpO₂"
               value={`${latestReading.spo2_pct}%`}
               alarm="alarm at < 92%"
-              ok={latestReading.spo2_pct >= 92}
+              ok={allInRange}
             />
             <AlarmCheck
               label="Heart rate"
               value={`${latestReading.hr_bpm} bpm`}
               alarm="alarm at > 130"
-              ok={latestReading.hr_bpm <= 130 && latestReading.hr_bpm >= 45}
+              ok={allInRange}
             />
           </div>
 
@@ -286,9 +303,10 @@ export default function DashboardView({
 
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <Legend swatch={<MarkerSwatch />} label="admitted · sent home" />
-          <Legend swatch={<span className="mono" style={{ fontSize: '0.7rem' }}>▢</span>} label="hospital" />
+          <Legend swatch={<span style={{ width: 9, height: 10, background: 'var(--slate-chip)', borderRadius: 2, display: 'inline-block' }} />} label="selected day" />
+          <Legend swatch={<span style={{ width: 14, height: 8, background: 'var(--slate-fill)', borderRadius: 2, display: 'inline-block' }} />} label="hospital phase" />
           <Legend swatch={<span className="mono" style={{ fontSize: '0.7rem', color: 'var(--slate)' }}>●</span>} label="home" />
-          <Legend swatch={<span style={{ width: 14, height: 8, background: 'var(--slate-fill)', borderRadius: 2, display: 'inline-block' }} />} label="days 1–2 baseline band" />
+          <Legend swatch={<span style={{ width: 14, height: 8, background: 'var(--pass-bg)', borderRadius: 2, display: 'inline-block' }} />} label="days 1–2 baseline band" />
         </div>
       </section>
 
@@ -386,8 +404,8 @@ function MetricCard({
         <TierDot tier={tier} showWord={false} />
       </div>
       <span
-        className="mono"
-        style={{ fontSize: '2.1rem', fontWeight: 500, color: active ? TIER_TEXT[tier] : 'var(--muted)' }}
+        className="display"
+        style={{ fontSize: '2.4rem', lineHeight: 1, color: active ? TIER_TEXT[tier] : 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}
       >
         {value}
       </span>
@@ -399,11 +417,11 @@ type Metric = 'weight_lb' | 'spo2_pct' | 'hr_bpm';
 
 function Readout({ label, value }: { label: string; value: string }) {
   return (
-    <span style={{ display: 'inline-flex', flexDirection: 'column' }}>
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 1 }}>
       <span className="mono" style={{ fontSize: '0.54rem', letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--muted)' }}>
         {label}
       </span>
-      <span className="mono" style={{ fontSize: '0.92rem', fontWeight: 500, color: 'var(--ink)' }}>
+      <span className="display" style={{ fontSize: '1.18rem', lineHeight: 1, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
         {value}
       </span>
     </span>
@@ -424,7 +442,7 @@ function Legend({ swatch, label }: { swatch: React.ReactNode; label: string }) {
 function MarkerSwatch() {
   return (
     <svg width="12" height="12" aria-hidden="true">
-      <line x1="6" y1="0" x2="6" y2="12" stroke="var(--muted)" strokeWidth="1" strokeDasharray="2 2" />
+      <line x1="6" y1="0" x2="6" y2="12" stroke="var(--ink)" strokeWidth="0.75" strokeDasharray="3 3" opacity={0.55} />
     </svg>
   );
 }
@@ -496,8 +514,8 @@ function TrendChart({
       </div>
 
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label={`${title} trend, hospital through home`}>
-        {/* hospital-phase shading */}
-        <rect x={x(0)} y={plotTop} width={x(SENT_HOME_INDEX) - x(0)} height={plotBottom - plotTop} fill="var(--slate-fill)" opacity={0.6} />
+        {/* hospital-phase shading — the inpatient stay reads as a quiet slate field */}
+        <rect x={x(0)} y={plotTop} width={x(SENT_HOME_INDEX) - x(0)} height={plotBottom - plotTop} fill="var(--slate-fill)" opacity={0.7} />
 
         {/* home baseline band (days 1–2 ± trend margin) */}
         <rect
@@ -506,7 +524,19 @@ function TrendChart({
           width={x(fullLen - 1) - x(HOME_START_INDEX)}
           height={Math.max(0, y(baseline - margin) - y(baseline + margin))}
           fill="var(--pass-bg)"
-          opacity={0.5}
+          opacity={0.55}
+        />
+
+        {/* selected-day indicator — a soft slate band, distinct from the dashed
+            reference lines so the pinned day is unmistakable. Drawn first (under). */}
+        <rect
+          x={x(selectedIndex) - 4.5}
+          y={plotTop}
+          width={9}
+          height={plotBottom - plotTop}
+          rx={2}
+          fill="var(--slate-chip)"
+          opacity={0.7}
         />
 
         {/* reference lines: admitted + sent home */}
@@ -515,18 +545,15 @@ function TrendChart({
           { i: SENT_HOME_INDEX, label: 'sent home' },
         ].map((m) => (
           <g key={m.label}>
-            <line x1={x(m.i)} y1={plotTop - 4} x2={x(m.i)} y2={plotBottom} stroke="var(--muted)" strokeWidth={1} strokeDasharray="3 3" />
-            <text x={x(m.i)} y={plotTop - 7} textAnchor={m.i === ADMITTED_INDEX ? 'start' : 'middle'} className="mono" fontSize={7.5} fill="var(--muted)">
+            <line x1={x(m.i)} y1={plotTop - 5} x2={x(m.i)} y2={plotBottom} stroke="var(--ink)" strokeWidth={0.75} strokeDasharray="3 3" opacity={0.55} />
+            <text x={x(m.i)} y={plotTop - 8} textAnchor={m.i === ADMITTED_INDEX ? 'start' : 'middle'} className="mono" fontSize={8} fill="var(--muted)" letterSpacing="0.02em">
               {m.label}
             </text>
           </g>
         ))}
 
-        {/* selected-day indicator */}
-        <line x1={x(selectedIndex)} y1={plotTop} x2={x(selectedIndex)} y2={plotBottom} stroke="var(--slate)" strokeWidth={1} opacity={0.5} />
-
         {/* trend line */}
-        <path d={line} fill="none" stroke="var(--slate)" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+        <path d={line} fill="none" stroke="var(--slate)" strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
 
         {/* x-axis labels */}
         {points.map((p, i) => (
@@ -544,11 +571,15 @@ function TrendChart({
           const isSel = i === selectedIndex;
           return (
             <g key={`pt-${p.t}`} style={{ cursor: 'pointer' }} onClick={() => onSelect(i)}>
-              {isSel && <circle cx={cx} cy={cy} r={5.5} fill="none" stroke="var(--slate)" strokeWidth={1} />}
+              {isSel && (
+                <>
+                  <circle cx={cx} cy={cy} r={6} fill="var(--card)" stroke="var(--slate)" strokeWidth={1.25} />
+                </>
+              )}
               <circle
                 cx={cx}
                 cy={cy}
-                r={isDay4 ? 3.4 : 2.6}
+                r={isDay4 ? 3.6 : 2.6}
                 fill={isDay4 ? 'var(--watch-text)' : isHome ? 'var(--slate)' : 'var(--card)'}
                 stroke={isHome || isDay4 ? 'none' : 'var(--muted)'}
                 strokeWidth={1}

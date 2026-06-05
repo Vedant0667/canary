@@ -14,6 +14,7 @@ import type {
 } from '../types';
 import {
   BandPill,
+  Chip,
   StatusChip,
   ThresholdLadder,
   ScoreMeter,
@@ -116,14 +117,184 @@ function EhrChrome() {
 // Packet intake left rail (2)
 // =============================================================================
 
+// A realistic, never-before-seen CHF discharge referral note, written as prose a
+// discharge planner would actually type. Distinct patient from the 3 canned
+// packets — gives a judge a one-click way to prove live extraction is real.
+const EXAMPLE_NOTE = `Discharge referral — Eleanor Whitfield, 77F. MRN pending.
+
+Dx: acute decompensated CHF (HFrEF), now compensated and ready for transition to hospital-at-home. Admitted 4 days ago with worsening dyspnea; diuresed well on IV furosemide, now back to PO regimen.
+
+At discharge this AM: HR 78, BP 124/72, SpO2 95% on room air, RR 18, temp 36.8C. Weight 168 lb, down about 6 lb over the last 72 hours with diuresis. No chest pain. Mild exertional shortness of breath remaining, lower-extremity edema improving but still trace-to-mild.
+
+Home situation: lives with her daughter who is home full-time and comfortable helping with meds and daily weights. Stable apartment, reliable wifi, power and refrigeration fine. Patient manages her own medications with daughter double-checking. Fall risk assessed low — uses a cane, steady. Has a home scale and a BP cuff already; we can drop off a pulse ox same day.
+
+Plan: home telemonitoring, daily weights, titrate diuretic, cardiology follow-up in 1 week.`;
+
+function PasteIntake({
+  onExtractCustom,
+  customError,
+  liveAvailable,
+  isCustom,
+}: {
+  onExtractCustom: (rawText: string) => void;
+  customError: string | null;
+  liveAvailable: boolean;
+  isCustom: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const trimmed = text.trim();
+
+  // When a custom extraction is the active source, surface it as a selected
+  // "Pasted note" entry (highlighted like a chosen packet) so it's unambiguous
+  // the displayed record came from the pasted text.
+  if (isCustom && !open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        aria-pressed={true}
+        className="card"
+        style={{
+          textAlign: 'left',
+          cursor: 'pointer',
+          background: 'var(--slate-fill)',
+          borderColor: 'var(--slate)',
+          padding: 11,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span className="mono" style={{ fontSize: '0.86rem', fontWeight: 500, color: 'var(--ink)' }}>
+            Pasted note
+          </span>
+          <span className="mono" aria-hidden="true" style={{ fontSize: '0.62rem', color: 'var(--slate-text)' }}>
+            open
+          </span>
+        </div>
+        <span style={{ fontSize: '0.78rem', color: 'var(--muted)', lineHeight: 1.35 }}>
+          Free-text referral, extracted live by Claude.
+        </span>
+      </button>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="btn-ghost"
+        style={{ justifyContent: 'flex-start', width: '100%', padding: '9px 12px' }}
+      >
+        <span aria-hidden="true">+</span> Paste a referral note
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="card"
+      style={{
+        background: isCustom ? 'var(--slate-fill)' : 'var(--card)',
+        borderColor: isCustom ? 'var(--slate)' : 'var(--border)',
+        padding: 11,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span className="mono" style={{ fontSize: '0.86rem', fontWeight: 500, color: 'var(--ink)' }}>
+          Pasted note
+        </span>
+        <button
+          onClick={() => setText(EXAMPLE_NOTE)}
+          className="mono"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            color: 'var(--slate-text)',
+            fontSize: '0.66rem',
+          }}
+        >
+          Load example note
+        </button>
+      </div>
+
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Paste any CHF discharge / referral note…"
+        rows={7}
+        className="mono"
+        style={{
+          width: '100%',
+          resize: 'vertical',
+          background: 'var(--card)',
+          color: 'var(--ink)',
+          border: '0.5px solid var(--border)',
+          borderRadius: 10,
+          padding: '9px 10px',
+          fontSize: '0.72rem',
+          lineHeight: 1.5,
+        }}
+      />
+
+      <button
+        className="btn-primary"
+        onClick={() => onExtractCustom(trimmed)}
+        disabled={!liveAvailable || trimmed.length === 0}
+        style={{ justifyContent: 'center' }}
+      >
+        Extract &amp; score
+      </button>
+
+      {!liveAvailable && (
+        <p
+          className="mono"
+          style={{ margin: 0, fontSize: '0.66rem', color: 'var(--muted)', lineHeight: 1.45 }}
+        >
+          Live extraction needs an Anthropic API key — set VITE_ANTHROPIC_API_KEY in .env and restart.
+        </p>
+      )}
+
+      {customError && (
+        <div
+          role="status"
+          style={{
+            background: 'var(--slate-fill)',
+            border: '0.5px solid var(--slate)',
+            borderRadius: 10,
+            padding: '7px 10px',
+          }}
+        >
+          <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--slate-text)', lineHeight: 1.45 }}>
+            {customError}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PacketRail({
   packets,
   selectedPacketId,
   onSelectPacket,
+  isCustom,
+  onExtractCustom,
+  customError,
+  liveAvailable,
 }: {
   packets: PacketMeta[];
   selectedPacketId: string;
   onSelectPacket: (id: string) => void;
+  isCustom: boolean;
+  onExtractCustom: (rawText: string) => void;
+  customError: string | null;
+  liveAvailable: boolean;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -131,7 +302,7 @@ function PacketRail({
         Discharge packets
       </div>
       {packets.map((p) => {
-        const active = p.id === selectedPacketId;
+        const active = !isCustom && p.id === selectedPacketId;
         return (
           <button
             key={p.id}
@@ -169,6 +340,13 @@ function PacketRail({
           </button>
         );
       })}
+
+      <PasteIntake
+        onExtractCustom={onExtractCustom}
+        customError={customError}
+        liveAvailable={liveAvailable}
+        isCustom={isCustom}
+      />
     </div>
   );
 }
@@ -265,9 +443,14 @@ function AiIntakePanel({
         <div className="mono" style={labelStyle}>
           AI intake · Claude reads the packet — rules make the recommendation
         </div>
-        <span className="mono" style={{ fontSize: '0.62rem', color: 'var(--slate-text)' }}>
-          {source === 'live' ? 'live' : 'cached'}
-        </span>
+        {record && (
+          <Chip tone="slate">
+            <span aria-hidden="true">{source === 'live' ? '◆' : '○'}</span>
+            <span style={{ fontSize: '0.66rem' }}>
+              {source === 'live' ? 'Extracted live by Claude' : 'Cached demo extraction'}
+            </span>
+          </Chip>
+        )}
       </div>
 
       {!record && !extracting && (
@@ -327,8 +510,8 @@ function ScoreCard({ scoreResult }: { scoreResult: ScoreResult }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
         <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
           <span
-            className="mono"
-            style={{ fontSize: 56, lineHeight: 0.9, fontWeight: 500, color: 'var(--ink)' }}
+            className="display"
+            style={{ fontSize: 72, lineHeight: 0.86, fontVariantNumeric: 'tabular-nums', color: 'var(--ink)' }}
           >
             {scoreResult.overall}
           </span>
@@ -565,9 +748,8 @@ function ReasoningPanel({ scoreResult }: { scoreResult: ScoreResult }) {
   return (
     <div
       style={{
-        background: 'var(--card)',
-        border: '0.5px solid var(--border)',
-        borderLeft: '3px solid var(--slate)',
+        background: 'var(--slate-fill)',
+        border: '0.5px solid var(--slate)',
         borderRadius: 'var(--radius-card)',
         padding: 12,
         display: 'flex',
@@ -711,6 +893,10 @@ export default function TriageView({
   onDecideAdmit,
   decisionLog,
   decision,
+  onExtractCustom,
+  customError,
+  liveAvailable,
+  isCustom,
 }: TriageViewProps) {
   // The gate with the dominant deduction defaults open (PRD §4.4).
   const dominantGateId = scoreResult
@@ -736,6 +922,10 @@ export default function TriageView({
           packets={packets}
           selectedPacketId={selectedPacketId}
           onSelectPacket={onSelectPacket}
+          isCustom={isCustom}
+          onExtractCustom={onExtractCustom}
+          customError={customError}
+          liveAvailable={liveAvailable}
         />
 
         {/* Right column — AI intake + score + gates + reasoning + actions */}

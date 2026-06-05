@@ -100,7 +100,7 @@ function Caret({ open }: { open: boolean }) {
       style={{
         display: 'inline-block',
         width: 12,
-        transition: 'transform 120ms ease',
+        transition: 'transform var(--dur-fast) var(--ease-out)',
         transform: open ? 'rotate(90deg)' : 'none',
         color: 'var(--muted)',
         fontSize: '0.7rem',
@@ -156,7 +156,7 @@ function ResourceNode({
         }}
       >
         <Caret open={open} />
-        <span style={{ color: highlight ? 'var(--slate-text)' : 'var(--ink)' }}>
+        <span style={{ color: highlight ? 'var(--slate-text)' : 'var(--ink)', fontWeight: 500 }}>
           {resource}
         </span>
         {badge && (
@@ -437,13 +437,14 @@ function AccuraIntake({
 
       {sent && populatedCount >= fields.length && (
         <div
+          className="cl-rise"
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 8,
             background: 'var(--slate-fill)',
             color: 'var(--slate-text)',
-            border: '0.5px solid var(--border)',
+            border: '0.5px solid var(--slate-chip)',
             borderRadius: 4,
             padding: '7px 10px',
           }}
@@ -480,7 +481,8 @@ function AccuraIntake({
                   fontSize: '0.78rem',
                   minHeight: 28,
                   color: filled ? '#34302a' : 'transparent',
-                  transition: 'opacity 260ms ease, transform 260ms ease',
+                  transition:
+                    'opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out)',
                   opacity: filled ? 1 : 0.4,
                   transform: filled ? 'none' : 'translateY(2px)',
                 }}
@@ -501,6 +503,9 @@ function AccuraIntake({
 
 function TransferBeam({ active }: { active: boolean }) {
   if (!active) return null;
+  // Packets ride the full width of the split (left record → right intake),
+  // staggered so the stream reads as a continuous left-to-right delivery.
+  const packets = [0, 1, 2, 3, 4, 5];
   return (
     <div
       aria-hidden="true"
@@ -511,28 +516,27 @@ function TransferBeam({ active }: { active: boolean }) {
         overflow: 'hidden',
       }}
     >
-      {[0, 1, 2, 3, 4].map((i) => (
+      {packets.map((i) => (
         <span
           key={i}
           style={{
             position: 'absolute',
-            top: `${18 + i * 16}%`,
-            left: 0,
-            width: 8,
-            height: 8,
+            top: `${20 + i * 12}%`,
+            left: '6%',
+            width: 7,
+            height: 7,
             borderRadius: '50%',
             background: 'var(--slate)',
-            opacity: 0.85,
-            animation: `cardinal-fly 1.4s ${i * 0.18}s ease-in-out infinite`,
+            animation: `cardinal-fly 1.05s ${i * 0.12}s var(--ease-out) infinite`,
           }}
         />
       ))}
       <style>{`
         @keyframes cardinal-fly {
-          0%   { transform: translateX(0) scale(1); opacity: 0; }
-          15%  { opacity: 0.9; }
-          85%  { opacity: 0.9; }
-          100% { transform: translateX(calc(50vw - 40px)) scale(0.6); opacity: 0; }
+          0%   { transform: translateX(0) scale(0.7); opacity: 0; }
+          12%  { opacity: 0.95; }
+          80%  { opacity: 0.95; }
+          100% { transform: translateX(88%) scale(0.55); opacity: 0; }
         }
       `}</style>
     </div>
@@ -588,7 +592,7 @@ export default function HandoffView({ record, scoreResult, sent, onSend, onConti
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <header style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-        <h2 className="display" style={{ margin: 0, fontSize: '1.4rem', fontWeight: 400 }}>
+        <h2 className="display" style={{ margin: 0, fontSize: '1.5rem' }}>
           Hand-off
         </h2>
         <span className="mono" style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
@@ -618,14 +622,18 @@ export default function HandoffView({ record, scoreResult, sent, onSend, onConti
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: 8,
+              gap: 10,
               minWidth: 132,
             }}
           >
             <span
               className="mono"
               aria-hidden="true"
-              style={{ color: 'var(--slate-text)', fontSize: '1.1rem' }}
+              style={{
+                color: complete ? 'var(--slate)' : 'var(--slate-text)',
+                fontSize: '1.2rem',
+                transition: 'color var(--dur) var(--ease-out)',
+              }}
             >
               ⟶
             </span>
@@ -635,21 +643,32 @@ export default function HandoffView({ record, scoreResult, sent, onSend, onConti
               className="mono"
               style={{
                 border: '0.5px solid var(--slate)',
-                color: complete ? 'var(--muted)' : 'var(--slate-text)',
-                background: complete ? 'var(--page)' : 'var(--slate-chip)',
-                borderColor: complete ? 'var(--border)' : 'var(--slate)',
+                color: complete ? 'var(--slate-text)' : transferring ? 'var(--slate-text)' : '#fff',
+                background: complete
+                  ? 'var(--slate-fill)'
+                  : transferring
+                    ? 'var(--slate-chip)'
+                    : 'var(--slate)',
+                borderColor: 'var(--slate)',
                 borderRadius: 'var(--radius-pill)',
-                padding: '8px 18px',
+                padding: '8px 20px',
                 fontSize: '0.82rem',
+                fontWeight: 500,
                 cursor: transferring || complete ? 'default' : 'pointer',
-                opacity: transferring ? 0.7 : 1,
+                transition:
+                  'background var(--dur) var(--ease-out), color var(--dur) var(--ease-out)',
               }}
             >
               {complete ? 'sent ✓' : transferring ? 'sending…' : 'Send'}
             </button>
             <span
               className="mono"
-              style={{ fontSize: '0.66rem', color: 'var(--muted)', textAlign: 'center' }}
+              style={{
+                fontSize: '0.66rem',
+                color: 'var(--muted)',
+                textAlign: 'center',
+                transition: 'color var(--dur) var(--ease-out)',
+              }}
             >
               {complete ? 'FHIR bundle delivered' : 'transmit FHIR bundle'}
             </span>

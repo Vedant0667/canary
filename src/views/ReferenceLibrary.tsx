@@ -6,7 +6,7 @@
 // hardcoded here. Self-contained: if the backend is unreachable it renders nothing,
 // so the core demo is never affected.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface MetricDef {
   id: string;
@@ -63,6 +63,9 @@ export default function ReferenceLibrary() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // The chart template to render. Auto-selects to the chosen patient's condition,
+  // but can be overridden to view this patient's data through another template.
+  const [selectedCondition, setSelectedCondition] = useState<string | null>(null);
   const [mon, setMon] = useState<Monitoring | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'offline'>('loading');
 
@@ -80,6 +83,7 @@ export default function ReferenceLibrary() {
         // charts are visible immediately (Mrs. R is the hero on the main flow).
         const ref = ps.find((p) => p.condition !== 'chf') ?? ps[0];
         setSelectedKey(ref?.key ?? null);
+        setSelectedCondition(ref?.condition ?? null);
         setStatus('ready');
       })
       .catch(() => alive && setStatus('offline'));
@@ -100,11 +104,16 @@ export default function ReferenceLibrary() {
     };
   }, [selectedKey]);
 
-  const metricById = useMemo(
-    () => Object.fromEntries((mon?.metrics ?? []).map((m) => [m.id, m])),
-    [mon],
-  );
-  const template = templates.find((t) => t.condition === mon?.condition);
+  // Picking a patient auto-selects their condition's template. Overriding the
+  // template afterwards leaves the patient untouched (this only fires on patient
+  // change), so the auto-selection is a default, not a lock.
+  useEffect(() => {
+    const p = patients.find((x) => x.key === selectedKey);
+    if (p) setSelectedCondition(p.condition);
+  }, [selectedKey, patients]);
+
+  const selectedPatient = patients.find((p) => p.key === selectedKey);
+  const template = templates.find((t) => t.condition === selectedCondition);
 
   // Additive panel: if the backend is down, render nothing (demo never breaks).
   if (status !== 'ready' || patients.length === 0) return null;
@@ -130,56 +139,110 @@ export default function ReferenceLibrary() {
         </span>
       </div>
 
-      {/* Patient picker — one pill per reference patient, grouped by condition. */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {patients.map((p) => {
-          const sel = p.key === selectedKey;
-          return (
-            <button
-              key={p.key}
-              onClick={() => setSelectedKey(p.key)}
-              aria-pressed={sel}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                gap: 2,
-                padding: '7px 12px',
-                borderRadius: 12,
-                cursor: 'pointer',
-                textAlign: 'left',
-                background: sel ? 'var(--slate-fill)' : 'var(--page)',
-                border: sel ? '0.5px solid var(--slate)' : '0.5px solid var(--border)',
-              }}
-            >
-              <span style={{ fontSize: '0.84rem', fontWeight: 500, color: 'var(--ink)' }}>{p.name}</span>
-              <span className="mono" style={{ fontSize: '0.62rem', color: 'var(--muted)' }}>
-                {p.conditionLabel ?? p.condition} · MRN {p.mrn}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Two columns: selectors on the left, the auto-filled chart grid on the right. */}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        {/* LEFT — patient selector + (auto-selected, overridable) template selector. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: 216, flexShrink: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="mono" style={{ ...labelStyle, fontSize: '0.6rem' }}>
+              Patient
+            </div>
+            {patients.map((p) => {
+              const sel = p.key === selectedKey;
+              return (
+                <button
+                  key={p.key}
+                  onClick={() => setSelectedKey(p.key)}
+                  aria-pressed={sel}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    gap: 2,
+                    padding: '8px 12px',
+                    borderRadius: 12,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    background: sel ? 'var(--slate-fill)' : 'var(--page)',
+                    border: sel ? '0.5px solid var(--slate)' : '0.5px solid var(--border)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.84rem', fontWeight: 500, color: 'var(--ink)' }}>{p.name}</span>
+                  <span className="mono" style={{ fontSize: '0.62rem', color: 'var(--muted)' }}>
+                    {p.conditionLabel ?? p.condition} · MRN {p.mrn}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-      {/* Selected condition's template description. */}
-      {template && (
-        <p style={{ margin: 0, fontSize: '0.84rem', lineHeight: 1.45, color: 'var(--ink)' }}>
-          <strong style={{ fontWeight: 500 }}>{template.label} template</strong> · auto-monitors{' '}
-          {template.metrics.length} datasets — {template.description}
-        </p>
-      )}
-
-      {/* Auto-filled chart grid — every chart rendered from this patient's DB series. */}
-      {mon && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
-          {mon.config.map((id) => {
-            const m = metricById[id];
-            const pts = mon.series[id] ?? [];
-            if (!m || pts.length === 0) return null;
-            return <CompactChart key={id} metric={m} points={pts} />;
-          })}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="mono" style={{ ...labelStyle, fontSize: '0.6rem' }}>
+              Chart template
+            </div>
+            {templates.map((t) => {
+              const sel = t.condition === selectedCondition;
+              const auto = t.condition === selectedPatient?.condition;
+              return (
+                <button
+                  key={t.condition}
+                  onClick={() => setSelectedCondition(t.condition)}
+                  aria-pressed={sel}
+                  title={t.description}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    padding: '7px 12px',
+                    borderRadius: 'var(--radius-pill)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    background: sel ? 'var(--ink)' : 'var(--page)',
+                    color: sel ? 'var(--page)' : 'var(--ink)',
+                    border: sel ? '0.5px solid var(--ink)' : '0.5px solid var(--border)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.78rem', fontWeight: 500 }}>{t.label}</span>
+                  {auto && (
+                    <span
+                      className="mono"
+                      style={{ fontSize: '0.54rem', letterSpacing: '0.04em', textTransform: 'uppercase', opacity: 0.75 }}
+                    >
+                      auto
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      )}
+
+        {/* RIGHT — selected template description + its chart grid (this patient's DB series). */}
+        <div style={{ flex: 1, minWidth: 260, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {template && (
+            <p style={{ margin: 0, fontSize: '0.84rem', lineHeight: 1.45, color: 'var(--ink)' }}>
+              <strong style={{ fontWeight: 500 }}>{template.label} template</strong> · {template.metrics.length}{' '}
+              datasets{selectedPatient ? ` · ${selectedPatient.name}` : ''}
+              {template.condition !== selectedPatient?.condition && (
+                <span className="mono" style={{ color: 'var(--muted)' }}> · viewing through an alternate template</span>
+              )}
+              {' — '}
+              {template.description}
+            </p>
+          )}
+
+          {template && mon && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 12 }}>
+              {template.metrics.map((m) => {
+                const pts = mon.series[m.id] ?? [];
+                if (pts.length === 0) return null;
+                return <CompactChart key={m.id} metric={m} points={pts} />;
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </section>
   );
 }

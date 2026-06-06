@@ -6,7 +6,8 @@
 import { useEffect, useState } from 'react';
 import type { Reading, Tier, TierResult, Dyspnea } from '../types';
 import { Chip, TierDot } from '../components/primitives';
-import MonitoredDatasets from './MonitoredDatasets';
+import { DatasetConfigurator, SimpleMetricChart } from './MonitoredDatasets';
+import { useMonitoring } from '../lib/useMonitoring';
 import {
   ADMITTED_INDEX,
   SENT_HOME_INDEX,
@@ -124,6 +125,15 @@ export default function DashboardView({
   useEffect(() => setPinned(null), [day]); // advancing day re-follows the latest point
   const selectedIndex = pinned != null && pinned < revealedCount ? pinned : revealedCount - 1;
   const selectedPoint = timeline[selectedIndex];
+
+  // Configurable monitoring datasets (from the SQLite API). The chart grid renders
+  // exactly this list, in order — drag-and-drop edits it. Falls back to the core
+  // three vitals if the backend is offline, so the demo never breaks.
+  const monitoring = useMonitoring(patientMrn && patientMrn !== '—' ? patientMrn : 'demo');
+  const displayedMetrics =
+    monitoring.status === 'ready' && monitoring.monitored.length
+      ? monitoring.monitored
+      : ['weight_lb', 'spo2_pct', 'hr_bpm'];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -295,49 +305,39 @@ export default function DashboardView({
           <Readout label="HR" value={`${selectedPoint.hr_bpm} bpm`} />
         </div>
 
-        {/* Three trend charts — full hospital → home arc, clickable, with admitted
-            and sent-home reference lines and the home-baseline band (PRD §4.2/§4.3). */}
+        {/* Configurable dataset picker (drag-and-drop) — shown when the backend is up. */}
+        {monitoring.status === 'ready' && (
+          <DatasetConfigurator
+            metrics={monitoring.metrics}
+            monitored={monitoring.monitored}
+            onChange={monitoring.setMonitored}
+            patientName={patientName}
+          />
+        )}
+
+        {/* Config-driven chart grid — renders exactly the monitored datasets, in order.
+            Core vitals (weight/SpO₂/HR) show the rich hospital→home trajectory; other
+            datasets render as compact trend charts from the monitoring database. */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-          <TrendChart
-            title="Weight"
-            unit="lb"
-            metric="weight_lb"
-            points={points}
-            timeline={timeline}
-            fullLen={fullLen}
-            baseline={wBase}
-            margin={3}
-            dayFourIndex={dayFourIndex}
-            selectedIndex={selectedIndex}
-            onSelect={setPinned}
-            decimals={1}
-          />
-          <TrendChart
-            title="SpO₂"
-            unit="%"
-            metric="spo2_pct"
-            points={points}
-            timeline={timeline}
-            fullLen={fullLen}
-            baseline={sBase}
-            margin={2}
-            dayFourIndex={dayFourIndex}
-            selectedIndex={selectedIndex}
-            onSelect={setPinned}
-          />
-          <TrendChart
-            title="Heart rate"
-            unit="bpm"
-            metric="hr_bpm"
-            points={points}
-            timeline={timeline}
-            fullLen={fullLen}
-            baseline={hBase}
-            margin={10}
-            dayFourIndex={dayFourIndex}
-            selectedIndex={selectedIndex}
-            onSelect={setPinned}
-          />
+          {displayedMetrics.map((id) => {
+            if (id === 'weight_lb')
+              return (
+                <TrendChart key={id} title="Weight" unit="lb" metric="weight_lb" points={points} timeline={timeline} fullLen={fullLen} baseline={wBase} margin={3} dayFourIndex={dayFourIndex} selectedIndex={selectedIndex} onSelect={setPinned} decimals={1} />
+              );
+            if (id === 'spo2_pct')
+              return (
+                <TrendChart key={id} title="SpO₂" unit="%" metric="spo2_pct" points={points} timeline={timeline} fullLen={fullLen} baseline={sBase} margin={2} dayFourIndex={dayFourIndex} selectedIndex={selectedIndex} onSelect={setPinned} />
+              );
+            if (id === 'hr_bpm')
+              return (
+                <TrendChart key={id} title="Heart rate" unit="bpm" metric="hr_bpm" points={points} timeline={timeline} fullLen={fullLen} baseline={hBase} margin={10} dayFourIndex={dayFourIndex} selectedIndex={selectedIndex} onSelect={setPinned} />
+              );
+            const m = monitoring.metricById[id];
+            if (!m) return null;
+            return (
+              <SimpleMetricChart key={id} label={m.label} unit={m.unit} decimals={m.decimals} series={monitoring.series[id] ?? []} />
+            );
+          })}
         </div>
 
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -348,13 +348,6 @@ export default function DashboardView({
           <Legend swatch={<span style={{ width: 14, height: 8, background: 'var(--pass-bg)', borderRadius: 2, display: 'inline-block' }} />} label="days 1–2 baseline band" />
         </div>
       </section>
-
-      {/* Configurable monitoring datasets (drag-and-drop, backed by the SQLite API).
-          Self-contained + fail-safe: hides itself if the backend isn't running. */}
-      <MonitoredDatasets
-        patientKey={patientMrn && patientMrn !== '—' ? patientMrn : 'demo'}
-        patientName={patientName}
-      />
 
       {/* Daily symptom check-in — the home-care provider reports symptoms each day.
           The answer feeds the engine's trend tier (assessTrend), so symptoms can

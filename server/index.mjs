@@ -28,6 +28,23 @@ app.get('/api/metrics', (_req, res) => {
   res.json(metricsStmt.all());
 });
 
+// The discharge packets (triage inputs): raw paperwork + canonical extraction,
+// served from the database. The app fetches these instead of bundling them.
+const packetsStmt = db.prepare(
+  'SELECT id,label,blurb,raw_text,cached_record FROM packets ORDER BY position',
+);
+app.get('/api/packets', (_req, res) => {
+  res.json(
+    packetsStmt.all().map((p) => ({
+      id: p.id,
+      label: p.label,
+      blurb: p.blurb,
+      rawText: p.raw_text,
+      cachedRecord: JSON.parse(p.cached_record),
+    })),
+  );
+});
+
 // Everything the configurable dashboard needs for one patient: the catalog, the
 // ordered monitored set, and the series for each metric.
 app.get('/api/patients/:key/monitoring', (req, res) => {

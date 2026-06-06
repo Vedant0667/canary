@@ -11,6 +11,7 @@
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const db = new Database(join(__dirname, 'canary.db'));
@@ -43,7 +44,33 @@ db.exec(`
     value REAL NOT NULL,
     PRIMARY KEY (patient_key, metric_id, t)
   );
+  CREATE TABLE IF NOT EXISTS packets (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    blurb TEXT NOT NULL,
+    raw_text TEXT NOT NULL,
+    cached_record TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0
+  );
 `);
+
+// The three discharge packets (the clinical INPUTS to triage). The raw hospital
+// paperwork and the canonical extraction are read from source files and persisted
+// here, so the app fetches its case data from the database rather than the bundle.
+const PACKET_SEED = [
+  { id: 'mrs-r', label: 'Mrs. R', blurb: '72F CHF, stable, daughter caregiver' },
+  { id: 'mr-d', label: 'Mr. D', blurb: '68M CHF, SpO2 93, weight +3.1 lb, part-time caregiver' },
+  { id: 'ms-k', label: 'Ms. K', blurb: '81F CHF, SpO2 91, lives alone' },
+];
+const dataDir = join(__dirname, '..', 'src', 'data');
+const insPacket = db.prepare(
+  'INSERT OR REPLACE INTO packets (id,label,blurb,raw_text,cached_record,position) VALUES (?,?,?,?,?,?)',
+);
+PACKET_SEED.forEach((p, i) => {
+  const rawText = readFileSync(join(dataDir, 'packets', `${p.id}.md`), 'utf8');
+  const cachedRecord = readFileSync(join(dataDir, 'extractions', `${p.id}.json`), 'utf8');
+  insPacket.run(p.id, p.label, p.blurb, rawText, cachedRecord, i);
+});
 
 // The catalog of monitorable datasets. `base`/`amp` drive synthetic series and are
 // not stored in the catalog table (only the display columns are).

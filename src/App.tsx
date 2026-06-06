@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PatientRecord, ScoreResult, Dyspnea } from './types';
-import { PACKETS } from './data/packets';
+import { PACKETS, type PacketMeta } from './data/packets';
 import { MRS_R_SERIES, MRS_R_TIMELINE, synthesizeTrajectory } from './data/monitoring';
 import { extractPacket, extractLive, generateScenario } from './lib/extraction';
 import { scoreEligibility, assessTrend } from './engine/scoring';
@@ -93,9 +93,14 @@ export default function App() {
   // the current selection.
   const runIdRef = useRef(0);
 
+  // Discharge packets are loaded FROM THE DATABASE (GET /api/packets). The bundled
+  // PACKETS is only an offline fallback so the demo survives with no backend.
+  const [packets, setPackets] = useState<PacketMeta[]>(PACKETS);
+  const packetsRef = useRef<PacketMeta[]>(PACKETS);
+
   // --- extraction + scoring (the ONLY clinical compute site) ---------------
   const runExtraction = useCallback((packetId: string, forceFallback: boolean) => {
-    const packet = PACKETS.find((p) => p.id === packetId);
+    const packet = packetsRef.current.find((p) => p.id === packetId);
     if (!packet) return;
 
     const runId = ++runIdRef.current;
@@ -121,9 +126,24 @@ export default function App() {
     });
   }, []);
 
-  // Default-select Mrs. R on mount.
+  // Load packets from the database, then run the default extraction. Falls back
+  // to the bundled packets (already in state) if the backend is unreachable.
   useEffect(() => {
-    runExtraction(DEFAULT_PACKET_ID, false);
+    let cancelled = false;
+    fetch('/api/packets')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((rows: PacketMeta[]) => {
+        if (cancelled || !Array.isArray(rows) || rows.length === 0) return;
+        packetsRef.current = rows;
+        setPackets(rows);
+      })
+      .catch((err) => console.warn('[canary] /api/packets unavailable, using bundled fallback:', err))
+      .finally(() => {
+        if (!cancelled) runExtraction(DEFAULT_PACKET_ID, false);
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -413,7 +433,7 @@ export default function App() {
       {/* Active view */}
       {state.view === 'triage' && (
         <TriageView
-          packets={PACKETS}
+          packets={packets}
           selectedPacketId={state.packetId}
           record={state.record}
           scoreResult={state.scoreResult}

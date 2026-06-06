@@ -29,7 +29,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS patients (
     key TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    mrn TEXT
+    mrn TEXT,
+    condition TEXT NOT NULL DEFAULT 'chf'
   );
   CREATE TABLE IF NOT EXISTS monitor_config (
     patient_key TEXT NOT NULL,
@@ -76,7 +77,30 @@ db.exec(`
     computed_at TEXT NOT NULL,
     PRIMARY KEY (patient_key, day)
   );
+  -- Per-chronic-condition monitoring TEMPLATE: the catalog metadata...
+  CREATE TABLE IF NOT EXISTS condition_templates (
+    condition TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    description TEXT NOT NULL
+  );
+  -- ...and the ordered set of datasets (charts) a condition auto-monitors.
+  CREATE TABLE IF NOT EXISTS template_metrics (
+    condition TEXT NOT NULL,
+    metric_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (condition, metric_id)
+  );
 `);
+
+// Older DBs predate the patients.condition column — add it if missing (no-op otherwise).
+try {
+  const cols = db.prepare('PRAGMA table_info(patients)').all();
+  if (!cols.some((c) => c.name === 'condition')) {
+    db.exec("ALTER TABLE patients ADD COLUMN condition TEXT NOT NULL DEFAULT 'chf'");
+  }
+} catch {
+  /* table just created with the column — nothing to migrate */
+}
 
 // The three discharge packets (the clinical INPUTS to triage). The raw hospital
 // paperwork and the canonical extraction are read from source files and persisted
@@ -108,6 +132,10 @@ export const METRICS = [
   { id: 'sodium_mg', label: 'Sodium intake', unit: 'mg', description: 'Daily dietary sodium', category: 'Intake', decimals: 0, base: 2000, amp: 450 },
   { id: 'fluid_ml', label: 'Fluid intake', unit: 'mL', description: 'Daily fluid intake', category: 'Intake', decimals: 0, base: 1500, amp: 300 },
   { id: 'med_adherence', label: 'Med adherence', unit: '%', description: 'Doses taken on time', category: 'Adherence', decimals: 0, base: 92, amp: 6 },
+  // COPD-oriented datasets.
+  { id: 'peak_flow', label: 'Peak expiratory flow', unit: 'L/min', description: 'Best of three blows; falling = airway narrowing', category: 'Respiratory', decimals: 0, base: 320, amp: 38 },
+  // Diabetes-oriented datasets.
+  { id: 'blood_glucose', label: 'Blood glucose', unit: 'mg/dL', description: 'Fasting capillary glucose', category: 'Labs', decimals: 0, base: 142, amp: 34 },
 ];
 
 const insMetric = db.prepare(
@@ -117,6 +145,50 @@ for (const m of METRICS) insMetric.run(m.id, m.label, m.unit, m.description, m.c
 
 // Default datasets a new patient is monitored on (drag-and-drop edits this).
 export const DEFAULT_MONITORED = ['weight_lb', 'spo2_pct', 'hr_bpm', 'edema_score'];
+
+// Per-condition monitoring TEMPLATES: each chronic condition auto-fills a different,
+// clinically-relevant set of charts. CHF mirrors DEFAULT_MONITORED so the hero
+// patient (Mrs. R) is unchanged. The `metrics` arrays are the ordered chart grid.
+export const CONDITION_TEMPLATES = [
+  {
+    condition: 'chf',
+    label: 'Congestive heart failure',
+    description: 'Fluid-overload watch: weight, oxygenation, heart rate, peripheral edema.',
+    metrics: ['weight_lb', 'spo2_pct', 'hr_bpm', 'edema_score'],
+  },
+  {
+    condition: 'copd',
+    label: 'COPD',
+    description: 'Airway-narrowing watch: oxygenation, peak flow, respiratory rate, heart rate, adherence.',
+    metrics: ['spo2_pct', 'peak_flow', 'resp_rate', 'hr_bpm', 'med_adherence'],
+  },
+  {
+    condition: 't2dm',
+    label: 'Type 2 diabetes',
+    description: 'Glycemic + cardiometabolic watch: blood glucose, weight, blood pressure, adherence.',
+    metrics: ['blood_glucose', 'weight_lb', 'bp_systolic', 'med_adherence'],
+  },
+];
+
+const insTemplate = db.prepare(
+  'INSERT OR REPLACE INTO condition_templates (condition,label,description) VALUES (?,?,?)',
+);
+const insTemplateMetric = db.prepare(
+  'INSERT OR REPLACE INTO template_metrics (condition,metric_id,position) VALUES (?,?,?)',
+);
+for (const t of CONDITION_TEMPLATES) {
+  insTemplate.run(t.condition, t.label, t.description);
+  t.metrics.forEach((id, i) => insTemplateMetric.run(t.condition, id, i));
+}
+
+// The ordered chart set a condition monitors (falls back to DEFAULT_MONITORED).
+function templateMetrics(condition) {
+  const ids = db
+    .prepare('SELECT metric_id FROM template_metrics WHERE condition=? ORDER BY position')
+    .all(condition)
+    .map((r) => r.metric_id);
+  return ids.length ? ids : DEFAULT_MONITORED;
+}
 
 // Deterministic synthetic FULL trajectory (hospital → home) for (patient, metric).
 // t = 0..8: 4 hospital points (elevated, settling) + 5 home days. Stable per key.
@@ -147,13 +219,19 @@ function genTimeline(patientKey, m) {
 
 // Ensure a patient exists with a default config + a full set of synthetic series.
 // Called lazily so generated/pasted patients (any key) also get monitoring data.
-export function ensurePatient(key, name = 'Patient', mrn = null) {
-  db.prepare('INSERT OR IGNORE INTO patients (key,name,mrn) VALUES (?,?,?)').run(key, name, mrn ?? key);
+export function ensurePatient(key, name = 'Patient', mrn = null, condition = 'chf') {
+  db.prepare('INSERT OR IGNORE INTO patients (key,name,mrn,condition) VALUES (?,?,?,?)').run(
+    key,
+    name,
+    mrn ?? key,
+    condition,
+  );
 
   const cfgCount = db.prepare('SELECT COUNT(*) c FROM monitor_config WHERE patient_key=?').get(key).c;
   if (!cfgCount) {
+    // Auto-fill the chart grid from this patient's condition template.
     const ins = db.prepare('INSERT OR IGNORE INTO monitor_config (patient_key,metric_id,position) VALUES (?,?,?)');
-    DEFAULT_MONITORED.forEach((id, i) => ins.run(key, id, i));
+    templateMetrics(condition).forEach((id, i) => ins.run(key, id, i));
   }
 
   const serCount = db.prepare('SELECT COUNT(*) c FROM metric_series WHERE patient_key=?').get(key).c;
@@ -166,7 +244,13 @@ export function ensurePatient(key, name = 'Patient', mrn = null) {
   }
 }
 
-// Seed the canonical hero patient (Mrs. R) so the demo has data out of the box.
-ensurePatient('4471932', 'Margaret A. Roberts', '4471932');
+// Seed the canonical hero patient (Mrs. R, CHF) so the demo has data out of the box.
+ensurePatient('4471932', 'Margaret A. Roberts', '4471932', 'chf');
+
+// Two additional REFERENCE patients — same shape as Mrs. R, different chronic
+// conditions, all fabricated. Each auto-fills its condition's chart template, so
+// the dashboard renders condition-specific charts straight from the database.
+ensurePatient('5582013', 'James T. Powell', '5582013', 'copd');
+ensurePatient('6693027', 'Linda K. Alvarez', '6693027', 't2dm');
 
 export default db;

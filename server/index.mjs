@@ -69,7 +69,49 @@ app.get('/api/patients/:key/monitoring', (req, res) => {
   const series = {};
   for (const r of seriesRows) (series[r.metric_id] ??= []).push({ t: r.t, value: r.value });
 
-  res.json({ patientKey: key, config, metrics: metricsStmt.all(), series });
+  const p = db
+    .prepare(
+      'SELECT p.name, p.mrn, p.condition, c.label AS conditionLabel FROM patients p LEFT JOIN condition_templates c ON c.condition = p.condition WHERE p.key = ?',
+    )
+    .get(key);
+
+  res.json({
+    patientKey: key,
+    name: p?.name ?? null,
+    condition: p?.condition ?? null,
+    conditionLabel: p?.conditionLabel ?? null,
+    config,
+    metrics: metricsStmt.all(),
+    series,
+  });
+});
+
+// The chart templates per chronic condition: each condition auto-fills a
+// different, clinically-relevant set of datasets (resolved to full metric defs).
+app.get('/api/conditions', (_req, res) => {
+  const byId = Object.fromEntries(metricsStmt.all().map((m) => [m.id, m]));
+  const templates = db.prepare('SELECT condition,label,description FROM condition_templates').all();
+  res.json(
+    templates.map((t) => ({
+      ...t,
+      metrics: db
+        .prepare('SELECT metric_id FROM template_metrics WHERE condition=? ORDER BY position')
+        .all(t.condition)
+        .map((r) => byId[r.metric_id])
+        .filter(Boolean),
+    })),
+  );
+});
+
+// Every patient on file, with their condition (drives the reference-patient picker).
+app.get('/api/patients', (_req, res) => {
+  res.json(
+    db
+      .prepare(
+        'SELECT p.key, p.name, p.mrn, p.condition, c.label AS conditionLabel FROM patients p LEFT JOIN condition_templates c ON c.condition = p.condition ORDER BY p.condition, p.name',
+      )
+      .all(),
+  );
 });
 
 // Persist the clinician's drag-and-drop choice: the ordered list of monitored datasets.

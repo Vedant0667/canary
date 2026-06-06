@@ -20,6 +20,7 @@ import TriageView from './views/TriageView';
 import type { Decision } from './views/TriageView';
 import HandoffView from './views/HandoffView';
 import DashboardView from './views/DashboardView';
+import ReferenceLibrary from './views/ReferenceLibrary';
 
 type View = 'triage' | 'handoff' | 'monitoring';
 
@@ -591,20 +592,24 @@ export default function App() {
       )}
 
       {state.view === 'monitoring' && (
-        <DashboardView
-          day={state.day}
-          readings={trajectory.series}
-          timeline={trajectory.timeline}
-          patientName={monitoringName}
-          patientMrn={monitoringMrn}
-          tierByDay={tierByDay}
-          symptomByDay={state.symptomByDay}
-          onReportSymptom={onReportSymptom}
-          onAdvanceDay={onAdvanceDay}
-          onTelehealth={onTelehealth}
-          onNotifyPhysician={onNotifyPhysician}
-          intervention={state.intervention}
-        />
+        <>
+          <DashboardView
+            day={state.day}
+            readings={trajectory.series}
+            timeline={trajectory.timeline}
+            patientName={monitoringName}
+            patientMrn={monitoringMrn}
+            tierByDay={tierByDay}
+            symptomByDay={state.symptomByDay}
+            onReportSymptom={onReportSymptom}
+            onAdvanceDay={onAdvanceDay}
+            onTelehealth={onTelehealth}
+            onNotifyPhysician={onNotifyPhysician}
+            intervention={state.intervention}
+          />
+          {/* Condition-specific chart templates + reference patients, all DB-driven. */}
+          <ReferenceLibrary />
+        </>
       )}
     </main>
   );

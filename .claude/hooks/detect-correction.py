@@ -34,6 +34,11 @@ CORRECTION_PATTERNS = [
 ]
 PATTERNS = [re.compile(p, re.IGNORECASE) for p in CORRECTION_PATTERNS]
 
+# Harness-injected context (skill docs, SessionStart output, operator notes) can
+# arrive wrapped in <system-reminder> blocks inside an otherwise-real user turn.
+# Strip those before matching so we never fire on injected text.
+SYSTEM_REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.IGNORECASE | re.DOTALL)
+
 def extract_text(content):
     """User message content can be str OR list of blocks. Concat all text."""
     if isinstance(content, str):
@@ -78,15 +83,23 @@ def main():
                     rec = json.loads(line)
                 except Exception:
                     continue
+                # Skip harness-injected records. Skill docs, SessionStart output,
+                # and our OWN Stop-hook feedback all land as role="user" but carry
+                # isMeta=true; tool results carry a toolUseResult payload. None of
+                # these are user-typed, and the hook feedback even echoes the
+                # matched pattern back — scanning them makes the hook self-trigger.
+                if rec.get("isMeta") or rec.get("toolUseResult") is not None:
+                    continue
                 msg = rec.get("message", {})
                 if not isinstance(msg, dict):
                     continue
                 if msg.get("role") != "user":
                     continue
-                # Skip records that are pure tool_result feedback
                 content = msg.get("content")
-                text = extract_text(content).strip()
-                if not text:
+                # Strip any injected <system-reminder> blocks, then the request-
+                # interrupted sentinel, before pattern matching.
+                text = SYSTEM_REMINDER_RE.sub(" ", extract_text(content)).strip()
+                if not text or text == "[Request interrupted by user]":
                     continue
                 user_messages.append(text)
     except Exception:
@@ -122,7 +135,10 @@ def main():
             ["git", "-C", project_dir, "diff", "--cached", "--unified=0", "tasks/lessons.md"],
             capture_output=True, text=True, timeout=5,
         ).stdout
-        dated_re = re.compile(r"^\+\[\d{4}-\d{2}-\d{2}\]", re.MULTILINE)
+        # Accept both the bracketed [YYYY-MM-DD] form and the unbracketed
+        # YYYY-MM-DD form the lessons file actually uses — otherwise the hook
+        # never detects a freshly-written lesson and blocks Stop forever.
+        dated_re = re.compile(r"^\+\[?\d{4}-\d{2}-\d{2}\]?", re.MULTILINE)
         if dated_re.search(diff) or dated_re.search(diff_staged):
             sys.exit(0)
 

@@ -8,7 +8,7 @@
 // MRS_R_TIMELINE — the FULL trajectory for the dashboard charts: the hospital
 // admission → diuresis → discharge arc, then the same 5 home days. Visualization
 // only; the tier logic still runs on the home subset.
-import type { Reading } from '../types';
+import type { PatientRecord, Reading } from '../types';
 
 export const MRS_R_SERIES: Reading[] = [
   { day: 1, weight_lb: 148.0, spo2_pct: 95, hr_bpm: 78 },
@@ -46,7 +46,83 @@ export const MRS_R_TIMELINE: TimelinePoint[] = [
   { t: 8, label: 'D5', full: 'Home · day 5', phase: 'home', weight_lb: 150.1, spo2_pct: 94, hr_bpm: 83 },
 ];
 
-// Reference markers (timeline indices).
+// Reference markers (timeline indices). The synthesized trajectory below uses the
+// same 4-hospital + 5-home layout, so these indices hold for every patient.
 export const ADMITTED_INDEX = 0; // admission
 export const HOME_START_INDEX = 4; // first home day
 export const SENT_HOME_INDEX = 4; // discharge / sent-home day = home day 1
+
+// ---------------------------------------------------------------------------
+// Per-patient trajectory synthesis.
+// ---------------------------------------------------------------------------
+//
+// There is no real device telemetry, so for any patient OTHER than Mrs. R (who
+// ships a hand-authored series) we fabricate a plausible 5-day home trajectory
+// — plus the preceding hospital admission→diuresis arc — from their extracted
+// discharge vitals. The day-by-day deltas are borrowed from Mrs. R's archetype
+// so the signature day-4 "converging trend" teaching moment reproduces for
+// every patient: weight drifting up while SpO₂/HR converge, yet every absolute
+// value still inside its alarm threshold (assessTrend → yellow, not red).
+
+const clampN = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
+const round1 = (x: number) => Math.round(x * 10) / 10;
+
+// Relative deltas vs the discharge baseline (= home day 1). Stable through days
+// 1–2, converging trend peaking day 4, partial recovery day 5.
+const HOME_DELTAS = [
+  { w: 0.0, s: 0, h: 0 },
+  { w: 0.2, s: 0, h: -1 },
+  { w: 1.5, s: -1, h: 4 },
+  { w: 3.4, s: -2, h: 11 },
+  { w: 2.1, s: -1, h: 5 },
+];
+
+// Hospital phase: admitted decompensated, diuresed down to the discharge baseline.
+const HOSPITAL_DELTAS = [
+  { w: 11.0, s: -7, h: 28 },
+  { w: 7.2, s: -5, h: 21 },
+  { w: 3.6, s: -3, h: 12 },
+  { w: 1.2, s: -1, h: 5 },
+];
+
+export function synthesizeTrajectory(record: PatientRecord): {
+  series: Reading[];
+  timeline: TimelinePoint[];
+} {
+  const v = record.vitals;
+  // Discharge baseline, nudged into a safe in-range start (SpO₂ ≥ 94, HR ≤ 100)
+  // so the day-4 trend reads as a forecast (yellow) rather than tripping an
+  // absolute alarm. Patients accepted home are generally already in this band.
+  const baseW = v.weight_lb ?? 165;
+  const baseS = clampN(Math.round(v.spo2_pct ?? 96), 94, 99);
+  const baseH = clampN(Math.round(v.hr_bpm ?? 80), 60, 100);
+
+  const series: Reading[] = HOME_DELTAS.map((d, i) => ({
+    day: i + 1,
+    weight_lb: round1(baseW + d.w),
+    spo2_pct: clampN(baseS + d.s, 92, 100), // stay ≥ 92 → in range → yellow not red
+    hr_bpm: clampN(baseH + d.h, 40, 129), // stay ≤ 129 → in range
+  }));
+
+  const hospital: TimelinePoint[] = HOSPITAL_DELTAS.map((d, i) => ({
+    t: i,
+    label: i === 0 ? 'Adm' : `H${i + 1}`,
+    full: i === 0 ? 'Hospital · admission' : `Hospital · day ${i + 1}`,
+    phase: 'hospital',
+    weight_lb: round1(baseW + d.w),
+    spo2_pct: clampN(baseS + d.s, 80, 100),
+    hr_bpm: clampN(baseH + d.h, 40, 160),
+  }));
+
+  const home: TimelinePoint[] = series.map((rd, i) => ({
+    t: HOME_START_INDEX + i,
+    label: `D${i + 1}`,
+    full: i === 0 ? 'Home · day 1 (discharge)' : `Home · day ${i + 1}`,
+    phase: 'home',
+    weight_lb: rd.weight_lb,
+    spo2_pct: rd.spo2_pct,
+    hr_bpm: rd.hr_bpm,
+  }));
+
+  return { series, timeline: [...hospital, ...home] };
+}

@@ -3,11 +3,11 @@
 // functions run), and wires the three pure views behind a top stepper.
 // "UI never computes clinically" — views receive ScoreResult / TierResult as props.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PatientRecord, ScoreResult } from './types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { PatientRecord, ScoreResult, Dyspnea } from './types';
 import { PACKETS } from './data/packets';
-import { MRS_R_SERIES } from './data/monitoring';
-import { extractPacket, extractLive } from './lib/extraction';
+import { MRS_R_SERIES, MRS_R_TIMELINE, synthesizeTrajectory } from './data/monitoring';
+import { extractPacket, extractLive, generateScenario } from './lib/extraction';
 import { scoreEligibility, assessTrend } from './engine/scoring';
 import { Stepper } from './components/primitives';
 import type { Step } from './components/primitives';
@@ -17,6 +17,10 @@ import HandoffView from './views/HandoffView';
 import DashboardView from './views/DashboardView';
 
 type View = 'triage' | 'handoff' | 'monitoring';
+
+// The day-4 escalation can be resolved by either of two equal-weight actions.
+// Whichever is taken reveals the day-5 recovery and tailors the closing banner.
+type Intervention = 'telehealth' | 'physician';
 
 interface DemoState {
   packetId: string;
@@ -28,12 +32,21 @@ interface DemoState {
   view: View;
   // Per-patient logged decision. Once set, that patient's action row locks until Reset.
   decisions: Record<string, Decision>;
-  telehealthScheduled: boolean;
+  // Which day-4 intervention was taken (null until the coordinator acts).
+  intervention: Intervention | null;
   extracting: boolean;
+  // True while Claude is writing a brand-new synthetic patient (before extraction).
+  generating: boolean;
   source: 'live' | 'cache';
-  // Live extraction of a pasted, never-before-seen note. Null unless the user
-  // used the "paste a referral note" path; carries an honest error if it fails.
+  // Live extraction of a pasted/generated, never-before-seen note. Null unless the
+  // user used the paste-a-note or generate path; carries an honest error if it fails.
   customError: string | null;
+  // The raw source note behind a custom record (pasted or generated), so the UI can
+  // show exactly what text produced the displayed extraction.
+  customNote: string | null;
+  // Daily provider-reported symptom status during home monitoring (day → status).
+  // Feeds assessTrend so symptoms escalate the daily tier, not just vitals.
+  symptomByDay: Record<number, Dyspnea>;
 }
 
 // True when a real Anthropic key is configured at build time. Drives honest
@@ -67,10 +80,13 @@ export default function App() {
     forceFallback: false,
     view: 'triage',
     decisions: {},
-    telehealthScheduled: false,
+    intervention: null,
     extracting: true,
+    generating: false,
     source: 'cache',
     customError: null,
+    customNote: null,
+    symptomByDay: {},
   });
 
   // Guards against a stale async extraction (rapid packet switching) clobbering
@@ -136,10 +152,12 @@ export default function App() {
         packetId: id,
         // Each patient starts back at triage; their logged decision persists.
         handoffSent: false,
-        telehealthScheduled: false,
+        intervention: null,
         day: 1,
         view: 'triage',
         customError: null,
+        customNote: null,
+        symptomByDay: {},
       }));
       setState((s) => {
         runExtraction(id, s.forceFallback);
@@ -161,12 +179,15 @@ export default function App() {
       record: null,
       scoreResult: null,
       extracting: true,
+      generating: false,
       source: 'live',
       customError: null,
+      customNote: rawText,
       handoffSent: false,
-      telehealthScheduled: false,
+      intervention: null,
       day: 1,
       view: 'triage',
+      symptomByDay: {},
     }));
 
     void extractLive(rawText).then((res) => {
@@ -182,6 +203,42 @@ export default function App() {
       }, 1200);
     });
   }, []);
+
+  // --- generate a brand-new synthetic patient, then extract + score it -------
+  // Claude writes a fresh CHF referral note (no cache), which is then run through
+  // the exact same live extraction path as a pasted note. Makes the triage screen
+  // work for an unbounded set of patients, not just the three canned packets.
+  const onGenerateScenario = useCallback(() => {
+    if (!LIVE_AVAILABLE) return;
+    const runId = ++runIdRef.current;
+    setState((s) => ({
+      ...s,
+      packetId: CUSTOM_PACKET_ID,
+      record: null,
+      scoreResult: null,
+      extracting: false,
+      generating: true,
+      source: 'live',
+      customError: null,
+      customNote: null,
+      handoffSent: false,
+      intervention: null,
+      day: 1,
+      view: 'triage',
+      symptomByDay: {},
+    }));
+
+    void generateScenario().then((res) => {
+      if (runId !== runIdRef.current) return; // superseded by a newer action
+      if (!res.ok) {
+        setState((s) => ({ ...s, generating: false, customError: res.message }));
+        return;
+      }
+      setState((s) => ({ ...s, generating: false }));
+      // Hand the fresh note to the same live extract + score path.
+      onExtractCustom(res.rawText);
+    });
+  }, [onExtractCustom]);
 
   const onDecideHome = useCallback(() => {
     // Home disposition → log it for THIS patient and move to Hand-off (Send gates
@@ -212,9 +269,20 @@ export default function App() {
     setState((s) => ({ ...s, day: Math.min(5, s.day + 1) }));
   }, []);
 
+  const onReportSymptom = useCallback((day: number, symptom: Dyspnea) => {
+    // Home-care provider's daily symptom check-in. Recorded per day and fed into
+    // the engine's trend tier (assessTrend), so symptoms can escalate a day.
+    setState((s) => ({ ...s, symptomByDay: { ...s.symptomByDay, [day]: symptom } }));
+  }, []);
+
   const onTelehealth = useCallback(() => {
     // Day-4 action: schedule telehealth → reveal day 5 (the reversal).
-    setState((s) => ({ ...s, telehealthScheduled: true, day: 5 }));
+    setState((s) => (s.intervention ? s : { ...s, intervention: 'telehealth', day: 5 }));
+  }, []);
+
+  const onNotifyPhysician = useCallback(() => {
+    // Day-4 alternative: notify the physician → same day-5 reversal, physician-led.
+    setState((s) => (s.intervention ? s : { ...s, intervention: 'physician', day: 5 }));
   }, []);
 
   const onStep = useCallback((index: number) => {
@@ -227,11 +295,13 @@ export default function App() {
       ...s,
       decisions: {},
       handoffSent: false,
-      telehealthScheduled: false,
+      intervention: null,
       day: 1,
       view: 'triage',
       packetId: DEFAULT_PACKET_ID,
       customError: null,
+      customNote: null,
+      symptomByDay: {},
     }));
     setState((s) => {
       runExtraction(DEFAULT_PACKET_ID, s.forceFallback);
@@ -252,11 +322,25 @@ export default function App() {
   const currentIndex = INDEX_BY_VIEW[state.view];
   const offline = state.forceFallback || state.source === 'cache';
 
+  // --- derived: per-patient monitoring trajectory --------------------------
+  // Mrs. R ships a hand-authored series; every other patient (the canned packets
+  // and live-generated/pasted ones) gets a trajectory fabricated from their own
+  // discharge vitals, so Home monitoring works for ANY patient — not just Mrs. R.
+  const trajectory = useMemo(() => {
+    if (state.packetId === 'mrs-r' || !state.record) {
+      return { series: MRS_R_SERIES, timeline: MRS_R_TIMELINE };
+    }
+    return synthesizeTrajectory(state.record);
+  }, [state.packetId, state.record]);
+
+  const monitoringName = state.record?.name ?? 'Patient';
+  const monitoringMrn = state.record?.mrn ?? '—';
+
   // --- derived: monitoring tiers (engine computes; view renders) -----------
   // assessTrend(baselineDays = days 1–2, today) for each revealed day.
-  const baselineDays = MRS_R_SERIES.slice(0, 2);
-  const tierByDay = MRS_R_SERIES.slice(0, state.day).map((reading) =>
-    assessTrend(baselineDays, reading),
+  const baselineDays = trajectory.series.slice(0, 2);
+  const tierByDay = trajectory.series.slice(0, state.day).map((reading) =>
+    assessTrend(baselineDays, reading, state.symptomByDay[reading.day] ?? null),
   );
 
   return (
@@ -335,6 +419,7 @@ export default function App() {
           record={state.record}
           scoreResult={state.scoreResult}
           extracting={state.extracting}
+          generating={state.generating}
           source={state.source}
           onSelectPacket={onSelectPacket}
           onDecideHome={onDecideHome}
@@ -342,7 +427,9 @@ export default function App() {
           decisionLog={decisionLog}
           decision={decision}
           onExtractCustom={onExtractCustom}
+          onGenerateScenario={onGenerateScenario}
           customError={state.customError}
+          customNote={state.customNote}
           liveAvailable={LIVE_AVAILABLE}
           isCustom={state.packetId === CUSTOM_PACKET_ID}
         />
@@ -361,11 +448,17 @@ export default function App() {
       {state.view === 'monitoring' && (
         <DashboardView
           day={state.day}
-          readings={MRS_R_SERIES}
+          readings={trajectory.series}
+          timeline={trajectory.timeline}
+          patientName={monitoringName}
+          patientMrn={monitoringMrn}
           tierByDay={tierByDay}
+          symptomByDay={state.symptomByDay}
+          onReportSymptom={onReportSymptom}
           onAdvanceDay={onAdvanceDay}
           onTelehealth={onTelehealth}
-          telehealthScheduled={state.telehealthScheduled}
+          onNotifyPhysician={onNotifyPhysician}
+          intervention={state.intervention}
         />
       )}
     </main>

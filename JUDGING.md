@@ -74,8 +74,11 @@ Use of AI Appropriateness — the split is the whole argument
 - AI is used for exactly one job: reading the free-text referral note and extracting a structured
   patient record. That is genuinely hard for rules (natural language, varied phrasing, missing
   fields) and is what language models are good at. See `src/lib/extraction.ts`: forced tool-use with
-  a JSON schema, model `claude-sonnet-4-6`, system prompt that instructs "use only what the note
-  states, return null for anything not mentioned, do not infer."
+  a JSON schema, model `claude-sonnet-4-6`, and a hardened system prompt that instructs "use only what
+  the note states, return null for anything not mentioned, do not infer," normalizes units (°F→°C,
+  kg→lb), and applies an explicit weight-window rule so a long-window weight change (e.g. +5 lb over 10
+  days) is recorded as absolute weight but NOT mislabeled as a 72-hour spike — which would otherwise
+  false-trigger the acute-fluid-overload red flag. Faithful extraction here protects the engine.
 - The clinical decision is NOT an LLM. It is a deterministic rules engine in
   `src/engine/scoring.ts`: pure functions, zero runtime imports, fully unit-testable. This is the
   defensible, regulator-friendly choice: every output traces to a threshold, the same input always
@@ -154,9 +157,10 @@ Home monitoring view (Functionality + UX + the payoff)
   SpO2, HR) with the days 1-2 baseline band shaded.
 - Click Advance day through the 5-day series. On day 4 the tier flips Yellow and a trajectory alert
   surfaces to the top with the exact deltas, plus the "no single-threshold alarm" caption.
-- Two equal-weight actions: Schedule telehealth / Notify physician. Scheduling telehealth reveals day
-  5, the trend reverses to Green, and the closing banner reads Bed-days used: 0 · Readmission: none ·
-  Studies re-run: 0.
+- Two equal-weight actions: Schedule telehealth / Notify physician. Either one (they are mutually
+  exclusive) resolves the episode, reveals day 5, the trend returns to Green, and the closing banner
+  reads "acted before any alarm" + Bed-days used: 0 · Readmission: none · Studies re-run: 0. The copy
+  states the action taken; it does not claim the model simulated the pharmacology of recovery.
 
 UX notes to emphasize: clear three-step flow, every number traceable, accessible tiers (color + icon
 + word), no marketing chrome, calm earthy palette with a single slate accent.
@@ -177,6 +181,12 @@ What is REAL (genuinely computed at runtime)
   error instead of fabricating a record. Paste any CHF note and watch it become a structured record
   and a score, live. There is a "Load example note" button that loads a fresh patient (Eleanor
   Whitfield, 77F) distinct from all three canned packets.
+- "Generate a patient" is the strongest proof. `generateScenario()` in `src/lib/extraction.ts` asks
+  Claude to write a brand-new, fully synthetic CHF referral note (one of three clinical archetypes —
+  stable / borderline / needs-admit — plus a random seed for variety), which then flows through the
+  exact same `extractLive` → `scoreEligibility` path. The note literally did not exist a second
+  earlier, so the resulting record and score cannot be a stored lookup. This makes triage work for an
+  unbounded set of patients, not just the three packets. (Live key required, same as paste-a-note.)
 - The scoring engine is a real deterministic rules engine, not a lookup that returns 86. It computes
   the overall from the extracted inputs: red flags first, then three weighted gates, weakest-link
   band logic, confidence from field completeness. Change an input and the score changes. For example,
@@ -194,8 +204,38 @@ What is INTENTIONALLY CANNED (and why that is legitimate, not cheating)
   day-4 teaching moment is reproducible every run. We are not faking device telemetry; we are
   replaying a representative trajectory so the engine has something deterministic to assess. The tier
   logic still runs live on that data.
-- Confidence sub-rows labeled "model certainty" and "case similarity" are explicitly marked
-  "(simulated)" in the UI. We do not pretend those are measured.
+- The day-5 recovery is also part of that scripted series — it is the same reading whichever day-4
+  action you take. Be precise about what is real here: the **day-4 detection is the real, valuable
+  part** (the engine catching a converging trend before any single alarm fires). The day-5 recovery is
+  **one plausible favorable trajectory if a clinician acts** — we are not claiming the app simulates
+  the pharmacology, and the on-screen copy now says "acted before any alarm," not "the drug fixed it."
+
+The honest posture to lead with (use this verbatim if asked "isn't this just hardcoded?"):
+  "There is no source of real patient telemetry for a hackathon build, so every patient here is
+  synthetic — and a real patient's vitals could follow any number of paths anyway. What we are showing
+  is not faked data dressed up as real; it is a representative trajectory with a genuinely live
+  extraction step and a genuinely deterministic engine running on top of it. The 'Generate a patient'
+  button makes that explicit: new synthetic patient, real extraction, real score, every time."
+- Confidence sub-rows "case-match certainty" and "similar prior cases" are now REAL: a k-NN
+  retrieval (`src/engine/cases.ts`) embeds the patient as a 6-D clinical feature vector and
+  searches a synthetic corpus of ~1,150 prior CHF cases (8 archetypes scattered across all six
+  clinical dimensions, deterministically seeded). Change the patient and both numbers change
+  (Mrs. R matches ~44 priors; a rare outlier finds 0). The corpus is synthetic (no real patient
+  data — same constraint as the rest of the demo), but the vectorized retrieval is genuine.
+- And it FEEDS THE RECOMMENDATION, not just the display. Two ways:
+  1. Novelty: an outlier with no near neighbours is capped to low confidence → band capped at Watch.
+  2. Outcome corroboration: each corpus case carries a SYNTHETIC outcome (managed-at-home vs bounced,
+     generated from a clinical-risk model on its vitals + noise). For a new patient we compute the
+     similarity-weighted home-success rate of the nearest prior cases, and an "Eligible" call must be
+     corroborated by ≥85% home-success among similar patients — otherwise it steps down to Watch
+     ("rules say great candidate, but patients like this didn't do well at home"). It only ever makes
+     the call MORE conservative (never upgrades; admit/red-flag logic untouched). E.g. a borderline-
+     eligible patient with ~79% similar-case success is stepped to Watch.
+- Honesty: the outcomes are SYNTHETIC (no real patient data exists for a hackathon) and therefore
+  correlate with the rules by construction — in production these are real, independent outcomes that
+  can disagree with the rules and catch genuine misses. Mrs. R is the scripted hero patient, so her
+  case-retrieval numbers (n=44, 90% home-success) are pinned for a deterministic demo; every other
+  patient (canned, generated, pasted) is computed live by the k-NN.
 
 How a judge can PROVE it live in about 20 seconds
 1. Set `VITE_ANTHROPIC_API_KEY` and start the app.

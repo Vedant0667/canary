@@ -18,14 +18,14 @@ import type {
   Confidence,
   ConfidenceLevel,
   Device,
+  Tier,
+  Dyspnea,
 } from '../types';
+import { caseSimilarity, type CaseMatch } from './cases';
 
 // ---------------------------------------------------------------------------
 // Static demo constants (spec §7 — internally simulated).
 // ---------------------------------------------------------------------------
-
-const MODEL_CERTAINTY = 0.88;
-const CASE_SIMILARITY_N = 12;
 
 // Points for each signal status (spec §4).
 const POINTS: Record<SignalStatus, number> = { in: 100, borderline: 60, out: 0 };
@@ -491,7 +491,7 @@ function gateStatus(score: number): GateStatus {
 // §7 Confidence — completeness over the ~20 schema fields.
 // ---------------------------------------------------------------------------
 
-function assessConfidence(record: PatientRecord): Confidence {
+function assessConfidence(record: PatientRecord, sim: CaseMatch): Confidence {
   const v = record.vitals;
   const s = record.symptoms;
   const h = record.home;
@@ -527,12 +527,22 @@ function assessConfidence(record: PatientRecord): Confidence {
   const present = fields.filter((f) => f !== null && f !== undefined).length;
   const completeness = present / total;
 
+  // `sim` is the real vectorized k-NN retrieval over the prior-case corpus
+  // (computed once in scoreEligibility), replacing the old "(simulated)" constants.
   let level: ConfidenceLevel;
   if (completeness >= 0.9) level = 'high';
   else if (completeness >= 0.7) level = 'medium';
   else level = 'low';
 
-  return { level, completeness, model_certainty: MODEL_CERTAINTY, case_similarity_n: CASE_SIMILARITY_N };
+  // The retrieval feeds confidence (a little): a patient unlike anything in the
+  // case base shouldn't be a high-confidence "send home". A true outlier (no near
+  // neighbours) caps confidence at low — which caps the band at Watch in
+  // determineBand — and mild novelty trims a high to medium. Typical, well-matched
+  // patients (e.g. Mrs. R, certainty ≈ 0.48) are unaffected.
+  if (sim.n === 0 || sim.certainty < 0.3) level = 'low';
+  else if (level === 'high' && sim.certainty < 0.4) level = 'medium';
+
+  return { level, completeness, model_certainty: sim.certainty, case_similarity_n: sim.n };
 }
 
 // ---------------------------------------------------------------------------
@@ -642,17 +652,40 @@ export function scoreEligibility(record: PatientRecord): ScoreResult {
 
   const overall = Math.round(0.5 * a.score + 0.2 * b.score + 0.3 * c.score);
 
-  const confidence = assessConfidence(record);
-  const band = determineBand(overall, gates, flags, confidence);
+  // Real vectorized retrieval over the prior-case corpus (computed once, shared).
+  const sim = caseSimilarity(record);
+  const confidence = assessConfidence(record, sim);
+  const rulesBand = determineBand(overall, gates, flags, confidence);
+
+  // Outcome corroboration gate: an "Eligible" call must be backed by good outcomes
+  // among similar prior patients. If patients like this one did poorly at home, step
+  // Eligible down to Watch. Conservative — it never upgrades, and admit/red-flag
+  // logic is untouched, so the recommendation can only become more cautious.
+  const CORROBORATION_BAR = 0.85;
+  const corroborates = sim.homeSuccessRate >= CORROBORATION_BAR;
+  const band: Band = rulesBand === 'eligible' && !corroborates ? 'watch' : rulesBand;
+
+  const similar_outcomes = {
+    home_success_rate: sim.homeSuccessRate,
+    n: sim.n,
+    corroborates,
+  };
 
   const dominant = findDominant(gates);
-  const rationale = buildRationale(record, band, gates, flags, dominant.note);
+  let rationale = buildRationale(record, band, gates, flags, dominant.note);
+  const pctHome = `${Math.round(sim.homeSuccessRate * 100)}% of ${sim.n} similar prior patients`;
+  if (rulesBand === 'eligible' && !corroborates) {
+    rationale += ` Stepped down from Eligible: only ${pctHome} were safely managed at home.`;
+  } else if (band === 'eligible') {
+    rationale += ` Corroborated by outcomes: ${pctHome} were safely managed at home.`;
+  }
 
   return {
     overall,
     band,
     red_flags: flags,
     confidence,
+    similar_outcomes,
     gates,
     dominant_signal: dominant.field,
     dominant_note: dominant.note,
@@ -664,7 +697,14 @@ export function scoreEligibility(record: PatientRecord): ScoreResult {
 // §12 assessTrend — monitoring trend (dashboard vignette).
 // ---------------------------------------------------------------------------
 
-export function assessTrend(baselineDays: Reading[], today: Reading): TierResult {
+export function assessTrend(
+  baselineDays: Reading[],
+  today: Reading,
+  // Daily provider-reported symptom status for `today` (home-care check-in).
+  // Symptoms are part of the clinical picture, not just vitals: a patient who is
+  // dyspneic at rest is escalated even when every tracked number looks fine.
+  symptom: Dyspnea | null = null,
+): TierResult {
   // Baseline = mean of days 1–2 per signal.
   const base = baselineDays.slice(0, 2);
   const n = base.length || 1;
@@ -700,6 +740,21 @@ export function assessTrend(baselineDays: Reading[], today: Reading): TierResult
   } else {
     tier = 'green';
     reason = 'Green: vitals tracking at or near baseline.';
+  }
+
+  // Daily provider-reported symptom escalation. Dyspnea at rest is respiratory
+  // distress → red; exertional dyspnea → at least yellow. Never de-escalates a
+  // vitals-driven tier (we take the worse of the two).
+  const rank: Record<Tier, number> = { green: 0, yellow: 1, red: 2 };
+  const vitalsReason = reason;
+  if (symptom === 'at_rest' && rank[tier] < rank.red) {
+    tier = 'red';
+    reason = `Red: provider reports dyspnea at rest — respiratory distress, escalate. (Vitals: ${vitalsReason})`;
+  } else if (symptom === 'exertional' && rank[tier] < rank.yellow) {
+    tier = 'yellow';
+    reason = `Yellow: provider reports exertional dyspnea — symptom-driven, watch closely. (Vitals: ${vitalsReason})`;
+  } else if (symptom === 'at_rest' || symptom === 'exertional') {
+    reason = `${reason} Provider also reports ${symptom === 'at_rest' ? 'dyspnea at rest' : 'exertional dyspnea'}.`;
   }
 
   // True when tier is not green but no individual value is itself out-of-range.

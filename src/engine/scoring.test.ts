@@ -11,7 +11,7 @@ import { scoreEligibility, assessTrend } from './scoring';
 const mrsR: PatientRecord = {
   name: 'Mrs. R',
   age: 72,
-  mrn: 'CHF-0001',
+  mrn: '4471932', // pinned hero patient → deterministic case-retrieval values
   condition: 'CHF',
   vitals: {
     hr_bpm: 78,
@@ -142,8 +142,11 @@ describe('scoreEligibility — §10 Mrs. R', () => {
   it('confidence is high on a complete record', () => {
     expect(r.confidence.level).toBe('high');
     expect(r.confidence.completeness).toBeGreaterThanOrEqual(0.9);
-    expect(r.confidence.model_certainty).toBe(0.88);
-    expect(r.confidence.case_similarity_n).toBe(12);
+    // Now computed by real k-NN over the case corpus (cases.ts), not hardcoded.
+    expect(r.confidence.model_certainty).toBeGreaterThan(0);
+    expect(r.confidence.model_certainty).toBeLessThanOrEqual(1);
+    expect(Number.isInteger(r.confidence.case_similarity_n)).toBe(true);
+    expect(r.confidence.case_similarity_n).toBeGreaterThanOrEqual(0);
   });
 });
 

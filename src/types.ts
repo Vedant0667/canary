@@ -106,9 +106,17 @@ export interface Gate {
 export interface Confidence {
   level: ConfidenceLevel;
   completeness: number; // 0..1
-  // Static demo values per spec §7 / design §5.2 — internally simulated.
-  model_certainty: number; // 0..1
-  case_similarity_n: number;
+  // Real vectorized k-NN retrieval over the prior-case corpus (src/engine/cases.ts).
+  model_certainty: number; // 0..1 — mean similarity of the nearest neighbours
+  case_similarity_n: number; // count of genuinely-similar prior cases
+}
+
+// Outcome evidence from the case base: of patients similar to this one, how many
+// were safely managed at home? Gates the "Eligible" call (see determineBand).
+export interface SimilarOutcomes {
+  home_success_rate: number; // 0..1, similarity-weighted among nearest prior cases
+  n: number; // count of genuinely-similar prior cases
+  corroborates: boolean; // rate meets the bar to corroborate a "home" recommendation
 }
 
 export interface ScoreResult {
@@ -116,6 +124,7 @@ export interface ScoreResult {
   band: Band;
   red_flags: RedFlag[];
   confidence: Confidence;
+  similar_outcomes: SimilarOutcomes;
   gates: Gate[];
   dominant_signal: string; // field name of the largest weighted deduction
   dominant_note: string; // the note for that signal (for templated rationale)

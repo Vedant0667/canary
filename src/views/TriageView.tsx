@@ -39,6 +39,8 @@ export interface TriageViewProps {
   record: PatientRecord | null;
   scoreResult: ScoreResult | null;
   extracting: boolean;
+  // True while Claude writes a brand-new synthetic patient (before extraction).
+  generating: boolean;
   source: 'live' | 'cache';
   onSelectPacket: (id: string) => void;
   onDecideHome: () => void;
@@ -49,7 +51,11 @@ export interface TriageViewProps {
   decision: Decision | null;
   // Live extraction of a pasted, never-before-seen referral note (anti-hardcode).
   onExtractCustom: (rawText: string) => void;
+  // Generate a fresh synthetic patient with Claude, then extract + score it.
+  onGenerateScenario: () => void;
   customError: string | null;
+  // Raw source note behind the current custom record (pasted or generated).
+  customNote: string | null;
   liveAvailable: boolean;
   isCustom: boolean;
 }
@@ -133,11 +139,13 @@ Plan: home telemonitoring, daily weights, titrate diuretic, cardiology follow-up
 function PasteIntake({
   onExtractCustom,
   customError,
+  customNote,
   liveAvailable,
   isCustom,
 }: {
   onExtractCustom: (rawText: string) => void;
   customError: string | null;
+  customNote: string | null;
   liveAvailable: boolean;
   isCustom: boolean;
 }) {
@@ -146,12 +154,16 @@ function PasteIntake({
   const trimmed = text.trim();
 
   // When a custom extraction is the active source, surface it as a selected
-  // "Pasted note" entry (highlighted like a chosen packet) so it's unambiguous
-  // the displayed record came from the pasted text.
+  // entry (highlighted like a chosen packet) so it's unambiguous the displayed
+  // record came from this exact note. Opening it reveals the full source text.
   if (isCustom && !open) {
+    const preview = customNote?.replace(/\s+/g, ' ').trim().slice(0, 96);
     return (
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          if (customNote) setText(customNote);
+          setOpen(true);
+        }}
         aria-pressed={true}
         className="card"
         style={{
@@ -167,14 +179,14 @@ function PasteIntake({
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span className="mono" style={{ fontSize: '0.86rem', fontWeight: 500, color: 'var(--ink)' }}>
-            Pasted note
+            Live patient
           </span>
           <span className="mono" aria-hidden="true" style={{ fontSize: '0.62rem', color: 'var(--slate-text)' }}>
-            open
+            view note
           </span>
         </div>
         <span style={{ fontSize: '0.78rem', color: 'var(--muted)', lineHeight: 1.35 }}>
-          Free-text referral, extracted live by Claude.
+          {preview ? `“${preview}${customNote && customNote.length > 96 ? '…' : ''}”` : 'Free-text referral, extracted live by Claude.'}
         </span>
       </button>
     );
@@ -285,7 +297,10 @@ function PacketRail({
   onSelectPacket,
   isCustom,
   onExtractCustom,
+  onGenerateScenario,
+  generating,
   customError,
+  customNote,
   liveAvailable,
 }: {
   packets: PacketMeta[];
@@ -293,7 +308,10 @@ function PacketRail({
   onSelectPacket: (id: string) => void;
   isCustom: boolean;
   onExtractCustom: (rawText: string) => void;
+  onGenerateScenario: () => void;
+  generating: boolean;
   customError: string | null;
+  customNote: string | null;
   liveAvailable: boolean;
 }) {
   return (
@@ -344,9 +362,33 @@ function PacketRail({
       <PasteIntake
         onExtractCustom={onExtractCustom}
         customError={customError}
+        customNote={customNote}
         liveAvailable={liveAvailable}
         isCustom={isCustom}
       />
+
+      {/* Generate a brand-new patient with Claude — proves triage works for an
+          unbounded set of patients, not just the canned packets. */}
+      <button
+        onClick={onGenerateScenario}
+        className="btn-ghost"
+        disabled={!liveAvailable || generating}
+        title={
+          liveAvailable
+            ? 'Claude writes a fresh CHF referral note, then it runs through the same live extract + score path'
+            : 'Set VITE_ANTHROPIC_API_KEY in .env and restart to enable live generation'
+        }
+        style={{ justifyContent: 'flex-start', width: '100%', padding: '9px 12px' }}
+      >
+        <span aria-hidden="true">{generating ? '◴' : '✦'}</span>{' '}
+        {generating ? 'Generating a patient…' : 'Generate a patient'}
+      </button>
+
+      {!liveAvailable && (
+        <span className="mono" style={{ fontSize: '0.62rem', color: 'var(--muted)', lineHeight: 1.4 }}>
+          Generation needs a live API key.
+        </span>
+      )}
     </div>
   );
 }
@@ -379,7 +421,18 @@ function fieldRows(record: PatientRecord): { label: string; chips: { text: strin
   if (v.weight_delta_72h_lb != null)
     vitalsChips.push({ key: 'wd', text: `Δ72h ${v.weight_delta_72h_lb >= 0 ? '+' : ''}${v.weight_delta_72h_lb} lb` });
 
-  const deviceChips = record.devices_available.map((d) => ({ key: d, text: DEVICE_LABEL[d] }));
+  // Show on-hand devices AND ones deliverable today (a note often says a device
+  // can be dropped off rather than that it's already home) — otherwise a patient
+  // with only deliverable devices reads as "not stated".
+  const deviceChips: { text: string; key: string }[] = record.devices_available.map((d) => ({
+    key: d,
+    text: DEVICE_LABEL[d],
+  }));
+  for (const d of record.devices_deliverable_today ?? []) {
+    if (!record.devices_available.includes(d)) {
+      deviceChips.push({ key: `${d}-deliverable`, text: `${DEVICE_LABEL[d]} (deliverable)` });
+    }
+  }
 
   const homeChips: { text: string; key: string }[] = [];
   if (h.caregiver != null) homeChips.push({ key: 'cg', text: `caregiver ${h.caregiver.replace('_', ' ')}` });
@@ -418,10 +471,12 @@ function TypedChip({ text, delayMs }: { text: string; delayMs: number }) {
 function AiIntakePanel({
   record,
   extracting,
+  generating,
   source,
 }: {
   record: PatientRecord | null;
   extracting: boolean;
+  generating: boolean;
   source: 'live' | 'cache';
 }) {
   const rows = record ? fieldRows(record) : [];
@@ -453,15 +508,15 @@ function AiIntakePanel({
         )}
       </div>
 
-      {!record && !extracting && (
+      {!record && !extracting && !generating && (
         <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
           Select a discharge packet to read it.
         </div>
       )}
 
-      {extracting && !record && (
+      {(extracting || generating) && !record && (
         <div className="mono" style={{ fontSize: '0.78rem', color: 'var(--slate-text)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          reading packet
+          {generating ? 'writing a new patient' : 'reading packet'}
           <span aria-hidden="true" style={{ animation: 'cl-blink 900ms steps(1) infinite' }}>▋</span>
         </div>
       )}
@@ -603,8 +658,14 @@ function ScoreCard({ scoreResult }: { scoreResult: ScoreResult }) {
           style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 11 }}
         >
           <ConfidenceRow label="completeness" value={pct(c.completeness)} />
-          <ConfidenceRow label="model certainty" value={pct(c.model_certainty)} sim />
-          <ConfidenceRow label="case similarity" value={`n = ${c.case_similarity_n}`} sim />
+          <ConfidenceRow label="case-match certainty" value={pct(c.model_certainty)} />
+          <ConfidenceRow label="similar prior cases" value={`n = ${c.case_similarity_n}`} />
+          <ConfidenceRow
+            label="similar-case home success"
+            value={`${pct(scoreResult.similar_outcomes.home_success_rate)}${
+              scoreResult.similar_outcomes.corroborates ? ' · corroborates' : ' · does not corroborate'
+            }`}
+          />
         </div>
       )}
     </div>
@@ -887,6 +948,7 @@ export default function TriageView({
   record,
   scoreResult,
   extracting,
+  generating,
   source,
   onSelectPacket,
   onDecideHome,
@@ -894,7 +956,9 @@ export default function TriageView({
   decisionLog,
   decision,
   onExtractCustom,
+  onGenerateScenario,
   customError,
+  customNote,
   liveAvailable,
   isCustom,
 }: TriageViewProps) {
@@ -924,22 +988,51 @@ export default function TriageView({
           onSelectPacket={onSelectPacket}
           isCustom={isCustom}
           onExtractCustom={onExtractCustom}
+          onGenerateScenario={onGenerateScenario}
+          generating={generating}
           customError={customError}
+          customNote={customNote}
           liveAvailable={liveAvailable}
         />
 
         {/* Right column — AI intake + score + gates + reasoning + actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <AiIntakePanel record={record} extracting={extracting} source={source} />
+          <AiIntakePanel record={record} extracting={extracting} generating={generating} source={source} />
 
-          {!scoreResult ? (
+          {customError && !extracting && !generating ? (
+            <div
+              className="card"
+              role="alert"
+              style={{
+                border: '0.5px solid var(--admit-text)',
+                background: 'var(--admit-bg)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                padding: 12,
+              }}
+            >
+              <span
+                className="mono"
+                style={{ fontSize: '0.66rem', letterSpacing: '0.06em', color: 'var(--admit-text)', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <span aria-hidden="true">▲</span> Live AI call failed
+              </span>
+              <span style={{ fontSize: '0.84rem', color: 'var(--ink)', lineHeight: 1.45 }}>{customError}</span>
+              <span className="mono" style={{ fontSize: '0.66rem', color: 'var(--muted)' }}>
+                Open the browser console for the full error. Pick a packet or try again.
+              </span>
+            </div>
+          ) : !scoreResult ? (
             <div
               className="card-sunken"
               style={{ fontSize: '0.86rem', color: 'var(--muted)', textAlign: 'center', padding: 22 }}
             >
-              {extracting
-                ? 'Scoring once intake completes…'
-                : 'Select a packet to compute home eligibility.'}
+              {generating
+                ? 'Generating a new patient, then scoring…'
+                : extracting
+                  ? 'Scoring once intake completes…'
+                  : 'Select a packet to compute home eligibility.'}
             </div>
           ) : (
             <>

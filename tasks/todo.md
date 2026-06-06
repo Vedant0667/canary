@@ -57,3 +57,68 @@ Prep meeting feedback:
 `npm run dev` → demo-ready. Press F to toggle offline/cached. Set VITE_ANTHROPIC_API_KEY
 for live extraction; "Paste a referral note" proves the live AI path on arbitrary input.
 See JUDGING.md for the rubric mapping + anti-hardcoding talking points.
+
+## Round 6 — extraction robustness + generate-a-patient + notify-physician (2026-06-05)
+- [x] extraction.ts: hardened SYSTEM_PROMPT — capture every stated value, unit
+      normalization (°F→°C, kg→lb), explicit weight-window rule so a long-window
+      weight change is NOT mislabeled as a 72h delta (which would false-trigger the
+      admit red flag). Note re the user's test note: temp was genuinely absent →
+      null is correct; +5 lb/10 days correctly stays out of the 72h field (only
+      weight_lb is captured). No schema/engine change → 23/23 tests still pass.
+- [x] generateScenario() in extraction.ts: Claude writes a fresh synthetic CHF note
+      (3 archetypes × random seed for variety), which flows through the SAME
+      extractLive + scoreEligibility path. Triage now works for unbounded patients.
+- [x] App.tsx: state `generating` / `customNote` / `intervention`; handlers
+      onGenerateScenario + onNotifyPhysician; telehealth generalized to `intervention`.
+- [x] TriageView: "Generate a patient" button (live-gated), generating UI, custom
+      card now shows the source note ("Live patient · view note").
+- [x] DashboardView: "Notify physician" now drives the day-5 reversal like telehealth
+      (mutually exclusive); closing banner copy reflects which action was taken.
+- [x] tsc 0 · 23/23 tests · vite build clean. (2 lint errors are PRE-EXISTING
+      set-state-in-effect on App.tsx:122 mount + DashboardView:102 setPinned.)
+- [ ] NOT live-tested: no API key in .env yet. User must paste key + `npm run dev`
+      to exercise live extraction + generation. All non-live paths verified.
+
+## Round 7 — per-patient monitoring + symptom integration + live-call fixes (2026-06-05)
+- [x] Live-call hardening: generation timeout 18s→45s, extract 18s→35s; abort now
+      detected as timeout (SDK throws APIUserAbortError, not name AbortError);
+      live failures surface a visible banner + console.error (were silently hidden).
+- [x] Generation completeness: max_tokens 700→1400 (700 truncated devices+home, the
+      last sections); prompt now requires devices + every home factor, and states the
+      weight trend over 72h specifically (was "recent trend" → extracted as null).
+- [x] Per-patient home monitoring: synthesizeTrajectory(record) fabricates the full
+      hospital→home arc from a patient's discharge vitals (Mrs. R keeps hand-authored
+      data). Day-4 converging-trend catch reproduces for any patient (verified YELLOW).
+      Roster + alert show the real patient name/MRN. Works for generated/pasted patients.
+- [x] Symptoms in scoring: triage already integrates them (Gate A 0.15 + RF3/RF4 +
+      confidence). assessTrend now ALSO takes a daily symptom (at_rest→red,
+      exertional→≥yellow, never de-escalates) — escalation truth table verified.
+- [x] Daily symptom check-in UI in DashboardView: asks the provider each day, feeds
+      the engine tier, shows result + per-day history. Defaults unreported (Mrs. R demo
+      unchanged). tsc 0 · 23/23 · build clean.
+
+## BACKLOG — Configurable per-practitioner templates (Round 2 productization) — NOT BUILT
+Concept (from product summary): template-driven but customizable home-care platform —
+clinicians configure WHICH data points they track per patient/condition. Start from
+condition templates (sensible defaults), then add/remove/swap fields. Supports varied
+data types (vitals, labs, symptom scores, free-text, patient-reported). A configurable
+dashboard layer on standardized templates.
+
+Reality today: we have ONE hardcoded CHF template. Fields fixed in types.ts + extraction
+schema; thresholds/weights are inline magic numbers in scoring.ts; dashboard hardwired to
+weight/SpO2/HR. This is the SAME gap as JUDGING.md §7's "configuration over customization"
+claim — currently aspirational, not real. A medically/technically literate judge reading
+scoring.ts will see the contradiction.
+
+Options:
+- [ ] (A) Round 1: keep as roadmap narrative; be upfront it's not built. (lowest effort, honest)
+- [ ] (B) Pre-Round-2: build a minimal REAL config — a "tracked fields" toggle so the
+      monitoring dashboard watches a configurable signal set; demo Practitioner A
+      (fluid-focused: weight/BP/edema/sodium) vs B (data-heavy: +HR rhythm/SpO2/med-adherence)
+      on the same patient. Hard part = engine reweighting per config. Externalize the
+      inline thresholds in scoring.ts into a config object as the first step.
+- [ ] (C) Add COPD + diabetes as template stubs for narrative variety (engine is CHF-
+      specific today, so real support is large; stubs only unless (B) lands first).
+- [ ] Optional: draft a clean product-concept doc to send to the dev/uncle for clinical
+      sanity-check on the CHF metric set before demo.
+- Decision pending from Vedant: A vs B (recommended A for R1, B before R2).

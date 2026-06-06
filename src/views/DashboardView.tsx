@@ -4,23 +4,32 @@
 // renders deltas/tiers it is handed and derives display numbers from them.
 
 import { useEffect, useState } from 'react';
-import type { Reading, Tier, TierResult } from '../types';
+import type { Reading, Tier, TierResult, Dyspnea } from '../types';
 import { Chip, TierDot } from '../components/primitives';
 import {
-  MRS_R_TIMELINE,
   ADMITTED_INDEX,
   SENT_HOME_INDEX,
   HOME_START_INDEX,
 } from '../data/monitoring';
 import type { TimelinePoint } from '../data/monitoring';
 
+// Which day-4 intervention the coordinator took (null = none yet). Either choice
+// resolves the episode and reveals the day-5 recovery.
+export type Intervention = 'telehealth' | 'physician';
+
 export interface DashboardViewProps {
   day: number; // 1..5, current revealed day
-  readings: Reading[]; // full 5-day series; render only up to `day`
+  readings: Reading[]; // full 5-day home series; render only up to `day`
+  timeline: TimelinePoint[]; // full hospital→home arc for the charts
+  patientName: string; // current patient (roster + alert), not hardcoded
+  patientMrn: string;
   tierByDay: TierResult[]; // assessTrend per revealed day (index 0 = day 1)
+  symptomByDay: Record<number, Dyspnea>; // provider's daily symptom report (day → status)
+  onReportSymptom: (day: number, symptom: Dyspnea) => void;
   onAdvanceDay: () => void;
   onTelehealth: () => void; // day-4 action → reveals day-5 reversal
-  telehealthScheduled: boolean;
+  onNotifyPhysician: () => void; // day-4 alternative → physician-led day-5 reversal
+  intervention: Intervention | null;
 }
 
 // Baseline = mean of days 1–2 per signal (spec §12). Pure read of the series.
@@ -44,14 +53,33 @@ const SECTION_LABEL: React.CSSProperties = {
   color: 'var(--muted)',
 };
 
+// Daily symptom check-in options (reuse the triage dyspnea vocabulary).
+const SYMPTOM_OPTIONS: { value: Dyspnea; label: string }[] = [
+  { value: 'none', label: 'No symptoms' },
+  { value: 'exertional', label: 'On exertion' },
+  { value: 'at_rest', label: 'At rest' },
+];
+const SYMPTOM_LABEL: Record<Dyspnea, string> = {
+  none: 'no symptoms',
+  exertional: 'exertional',
+  at_rest: 'at rest',
+};
+
 export default function DashboardView({
   day,
   readings,
+  timeline,
+  patientName,
+  patientMrn,
   tierByDay,
+  symptomByDay,
+  onReportSymptom,
   onAdvanceDay,
   onTelehealth,
-  telehealthScheduled,
+  onNotifyPhysician,
+  intervention,
 }: DashboardViewProps) {
+  const resolved = intervention !== null;
   const revealed = readings.slice(0, day);
   const latestReading = revealed[revealed.length - 1];
   const currentTier: Tier = tierByDay[day - 1]?.tier ?? 'green';
@@ -77,25 +105,24 @@ export default function DashboardView({
   // flags (day4.{weight,spo2,hr}_in_range) — the view never re-derives a
   // clinical verdict.
 
-  // Closing banner after telehealth scheduled and day 5 revealed.
-  const showClose = telehealthScheduled && day >= 5 && currentTier === 'green';
+  // Closing banner after an intervention is taken and day 5 reveals recovery.
+  const showClose = resolved && day >= 5 && currentTier === 'green';
 
   const canAdvance = day < readings.length;
 
   // --- Full trajectory (hospital → discharge → home) for the charts ---------
   // Hospital points are always shown; home points reveal with `day`.
   const revealedCount = HOME_START_INDEX + day;
-  const fullLen = MRS_R_TIMELINE.length;
-  const points = MRS_R_TIMELINE.slice(0, revealedCount);
+  const fullLen = timeline.length;
+  const points = timeline.slice(0, revealedCount);
   const dayFourIndex = HOME_START_INDEX + 3; // home day 4
 
   // Clickable point selection, synchronized across the three charts. Following the
   // latest revealed day by default; a click pins it until the next Advance.
   const [pinned, setPinned] = useState<number | null>(null);
   useEffect(() => setPinned(null), [day]); // advancing day re-follows the latest point
-  const [physicianNotified, setPhysicianNotified] = useState(false);
   const selectedIndex = pinned != null && pinned < revealedCount ? pinned : revealedCount - 1;
-  const selectedPoint = MRS_R_TIMELINE[selectedIndex];
+  const selectedPoint = timeline[selectedIndex];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -115,7 +142,7 @@ export default function DashboardView({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <Chip tone="yellow">◆ Trajectory alert</Chip>
             <span className="mono" style={{ fontSize: '0.78rem', color: 'var(--watch-text)' }}>
-              Mrs. R · day {day} · forecast: rising 24–48h decompensation risk
+              {patientName} · day {day} · forecast: rising 24–48h decompensation risk
             </span>
           </div>
 
@@ -166,23 +193,20 @@ export default function DashboardView({
             ◆ No single-threshold alarm would have fired yet — this is forecast, not alert.
           </p>
 
-          {/* EQUAL-WEIGHT actions (iron rule): identical buttons. */}
+          {/* EQUAL-WEIGHT actions (iron rule): identical buttons. Either one
+              resolves the episode and reveals the day-5 recovery. */}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button className="btn-action" onClick={onTelehealth} disabled={telehealthScheduled}>
-              {telehealthScheduled ? '✓ Telehealth scheduled' : 'Schedule telehealth'}
+            <button className="btn-action" onClick={onTelehealth} disabled={resolved}>
+              {intervention === 'telehealth' ? '✓ Telehealth scheduled' : 'Schedule telehealth'}
             </button>
-            <button
-              className="btn-action"
-              onClick={() => setPhysicianNotified(true)}
-              disabled={telehealthScheduled || physicianNotified}
-            >
-              {physicianNotified ? '✓ Physician notified' : 'Notify physician'}
+            <button className="btn-action" onClick={onNotifyPhysician} disabled={resolved}>
+              {intervention === 'physician' ? '✓ Physician notified' : 'Notify physician'}
             </button>
           </div>
         </section>
       )}
 
-      {/* Closing banner (PRD §4.5) — the payoff. */}
+      {/* Closing banner (PRD §4.5) — the payoff. Copy reflects the action taken. */}
       {showClose && (
         <section
           className="card cl-rise"
@@ -196,6 +220,11 @@ export default function DashboardView({
           }}
         >
           <Chip tone="green">● Resolved at home</Chip>
+          <span className="mono" style={{ fontSize: '0.82rem', color: 'var(--pass-text)' }}>
+            {intervention === 'physician'
+              ? 'Physician notified on day 4 — acted before any alarm'
+              : 'Telehealth scheduled on day 4 — acted before any alarm'}
+          </span>
           <span className="mono" style={{ fontSize: '0.9rem', color: 'var(--ink)' }}>
             Bed-days used: 0 · Readmission: none · Studies re-run: 0
           </span>
@@ -227,9 +256,9 @@ export default function DashboardView({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 120 }}>
-            <span style={{ fontSize: '0.95rem', fontWeight: 500 }}>Mrs. R</span>
+            <span style={{ fontSize: '0.95rem', fontWeight: 500 }}>{patientName}</span>
             <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
-              CHF · MRN 4471932
+              CHF · MRN {patientMrn}
             </span>
           </div>
           <TierDot tier={currentTier} />
@@ -273,6 +302,7 @@ export default function DashboardView({
             unit="lb"
             metric="weight_lb"
             points={points}
+            timeline={timeline}
             fullLen={fullLen}
             baseline={wBase}
             margin={3}
@@ -286,6 +316,7 @@ export default function DashboardView({
             unit="%"
             metric="spo2_pct"
             points={points}
+            timeline={timeline}
             fullLen={fullLen}
             baseline={sBase}
             margin={2}
@@ -298,6 +329,7 @@ export default function DashboardView({
             unit="bpm"
             metric="hr_bpm"
             points={points}
+            timeline={timeline}
             fullLen={fullLen}
             baseline={hBase}
             margin={10}
@@ -314,6 +346,63 @@ export default function DashboardView({
           <Legend swatch={<span className="mono" style={{ fontSize: '0.7rem', color: 'var(--slate)' }}>●</span>} label="home" />
           <Legend swatch={<span style={{ width: 14, height: 8, background: 'var(--pass-bg)', borderRadius: 2, display: 'inline-block' }} />} label="days 1–2 baseline band" />
         </div>
+      </section>
+
+      {/* Daily symptom check-in — the home-care provider reports symptoms each day.
+          The answer feeds the engine's trend tier (assessTrend), so symptoms can
+          escalate a day even when every tracked vital is still in range. */}
+      <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={SECTION_LABEL} className="mono">
+          Daily symptom check-in
+        </div>
+        <div style={{ fontSize: '0.92rem', color: 'var(--ink)', lineHeight: 1.4 }}>
+          Day {day}: is {patientName} short of breath or symptomatic today?
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {SYMPTOM_OPTIONS.map((opt) => {
+            const sel = (symptomByDay[day] ?? null) === opt.value;
+            return (
+              <button
+                key={opt.value}
+                className="btn-action"
+                aria-pressed={sel}
+                onClick={() => onReportSymptom(day, opt.value)}
+              >
+                {sel && <span aria-hidden="true">✓ </span>}
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        {symptomByDay[day] != null ? (
+          <span
+            className="mono"
+            role="status"
+            style={{ fontSize: '0.74rem', color: TIER_TEXT[currentTier], display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <TierDot tier={currentTier} showWord={false} />
+            Recorded for day {day} · today’s tier is {currentTier.toUpperCase()}
+            {tierByDay[day - 1] ? ` — ${tierByDay[day - 1].reason}` : ''}
+          </span>
+        ) : (
+          <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
+            Not yet reported for day {day} — today’s tier reflects vitals only until you answer.
+          </span>
+        )}
+        {/* Prior days' recorded answers */}
+        {day > 1 && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingTop: 2 }}>
+            {Array.from({ length: day - 1 }, (_, i) => i + 1).map((d) => (
+              <span
+                key={d}
+                className="mono"
+                style={{ fontSize: '0.64rem', color: 'var(--muted)', border: '0.5px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: '2px 8px' }}
+              >
+                d{d}: {symptomByDay[d] != null ? SYMPTOM_LABEL[symptomByDay[d]] : 'not reported'}
+              </span>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Day stepper (PRD §4.3) — the demo driver. */}
@@ -461,6 +550,7 @@ function TrendChart({
   unit,
   metric,
   points,
+  timeline,
   fullLen,
   baseline,
   margin,
@@ -473,6 +563,7 @@ function TrendChart({
   unit: string;
   metric: Metric;
   points: TimelinePoint[];
+  timeline: TimelinePoint[]; // full arc — for a stable y-scale as days reveal
   fullLen: number;
   baseline: number;
   margin: number;
@@ -492,7 +583,7 @@ function TrendChart({
   const plotBottom = H - padB;
 
   // Stable Y scale over the whole timeline + the baseline band edges.
-  const all = MRS_R_TIMELINE.map((p) => p[metric]);
+  const all = timeline.map((p) => p[metric]);
   const lo = Math.min(...all, baseline - margin);
   const hi = Math.max(...all, baseline + margin);
   const pad = (hi - lo) * 0.12 || 1;

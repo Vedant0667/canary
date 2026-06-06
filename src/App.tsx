@@ -3,10 +3,15 @@
 // functions run), and wires the three pure views behind a top stepper.
 // "UI never computes clinically" — views receive ScoreResult / TierResult as props.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { PatientRecord, ScoreResult, Dyspnea } from './types';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PatientRecord, ScoreResult, Dyspnea, Reading, TierResult } from './types';
 import { PACKETS, type PacketMeta } from './data/packets';
-import { MRS_R_SERIES, MRS_R_TIMELINE, synthesizeTrajectory } from './data/monitoring';
+import {
+  MRS_R_SERIES,
+  MRS_R_TIMELINE,
+  synthesizeTrajectory,
+  type TimelinePoint,
+} from './data/monitoring';
 import { extractPacket, extractLive, generateScenario } from './lib/extraction';
 import { scoreEligibility, assessTrend } from './engine/scoring';
 import { Stepper } from './components/primitives';
@@ -38,6 +43,9 @@ interface DemoState {
   // True while Claude is writing a brand-new synthetic patient (before extraction).
   generating: boolean;
   source: 'live' | 'cache';
+  // Where the readiness score was computed: 'api' = the backend engine (default),
+  // 'local' = the in-bundle engine fallback when the API is unreachable.
+  scoredBy: 'api' | 'local';
   // Live extraction of a pasted/generated, never-before-seen note. Null unless the
   // user used the paste-a-note or generate path; carries an honest error if it fails.
   customError: string | null;
@@ -70,6 +78,78 @@ const INDEX_BY_VIEW: Record<View, number> = { triage: 0, handoff: 1, monitoring:
 
 const DEFAULT_PACKET_ID = 'mrs-r';
 
+// Clinical compute is owned by the backend (Express + SQLite running the same
+// deterministic engine). These helpers POST to it — which also PERSISTS the input
+// record, the score, the trajectory readings, and each day's trend tier — and fall
+// back to the in-bundle engine only when the API is unreachable, so the demo still
+// works offline. Same engine on both sides ⇒ identical results either way.
+type ScoredBy = 'api' | 'local';
+
+async function computeScore(
+  patientKey: string,
+  record: PatientRecord,
+  source: 'live' | 'cache',
+): Promise<{ score: ScoreResult; scoredBy: ScoredBy }> {
+  try {
+    const r = await fetch(`/api/patients/${encodeURIComponent(patientKey)}/score`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ record, source }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    return { score: d.score as ScoreResult, scoredBy: 'api' };
+  } catch (err) {
+    console.warn('[canary] /score unavailable, using local engine:', err);
+    return { score: scoreEligibility(record), scoredBy: 'local' };
+  }
+}
+
+async function fetchTrajectory(
+  patientKey: string,
+  packetId: string,
+  record: PatientRecord | null,
+): Promise<{ series: Reading[]; timeline: TimelinePoint[] }> {
+  const local = () =>
+    packetId === 'mrs-r' || !record
+      ? { series: MRS_R_SERIES, timeline: MRS_R_TIMELINE }
+      : synthesizeTrajectory(record);
+  try {
+    const r = await fetch(`/api/patients/${encodeURIComponent(patientKey)}/trajectory`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ packetId, record }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } catch {
+    return local();
+  }
+}
+
+async function fetchTiers(
+  patientKey: string,
+  series: Reading[],
+  symptomByDay: Record<number, Dyspnea>,
+): Promise<TierResult[]> {
+  const local = () => {
+    const baseline = series.slice(0, 2);
+    return series.map((reading) => assessTrend(baseline, reading, symptomByDay[reading.day] ?? null));
+  };
+  try {
+    const r = await fetch(`/api/patients/${encodeURIComponent(patientKey)}/trends`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ series, symptomByDay }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    return d.tiers as TierResult[];
+  } catch {
+    return local();
+  }
+}
+
 export default function App() {
   const [state, setState] = useState<DemoState>({
     packetId: DEFAULT_PACKET_ID,
@@ -84,6 +164,7 @@ export default function App() {
     extracting: true,
     generating: false,
     source: 'cache',
+    scoredBy: 'local',
     customError: null,
     customNote: null,
     symptomByDay: {},
@@ -111,18 +192,19 @@ export default function App() {
       { forceFallback },
     ).then((result) => {
       if (runId !== runIdRef.current) return; // superseded by a newer run
-      const scoreResult = scoreEligibility(result.record);
-      // Populate record + score first; clear "extracting" after the populate beat
+      // Populate the record immediately; the score comes back from the backend
+      // engine (which also persists it), then we clear "extracting" after a beat
       // so the field-by-field animation in TriageView gets a window to play.
-      setState((s) => ({
-        ...s,
-        record: result.record,
-        scoreResult,
-        source: result.source,
-      }));
-      window.setTimeout(() => {
-        setState((s) => (runId === runIdRef.current ? { ...s, extracting: false } : s));
-      }, 1500);
+      setState((s) => ({ ...s, record: result.record, source: result.source }));
+      void computeScore(result.record.mrn || packetId, result.record, result.source).then(
+        ({ score, scoredBy }) => {
+          if (runId !== runIdRef.current) return;
+          setState((s) => ({ ...s, scoreResult: score, scoredBy }));
+          window.setTimeout(() => {
+            setState((s) => (runId === runIdRef.current ? { ...s, extracting: false } : s));
+          }, 1500);
+        },
+      );
     });
   }, []);
 
@@ -216,11 +298,16 @@ export default function App() {
         setState((s) => ({ ...s, extracting: false, customError: res.message, record: null, scoreResult: null }));
         return;
       }
-      const scoreResult = scoreEligibility(res.record);
-      setState((s) => ({ ...s, record: res.record, scoreResult, source: 'live' }));
-      window.setTimeout(() => {
-        setState((s) => (runId === runIdRef.current ? { ...s, extracting: false } : s));
-      }, 1200);
+      setState((s) => ({ ...s, record: res.record, source: 'live' }));
+      void computeScore(res.record.mrn || CUSTOM_PACKET_ID, res.record, 'live').then(
+        ({ score, scoredBy }) => {
+          if (runId !== runIdRef.current) return;
+          setState((s) => ({ ...s, scoreResult: score, scoredBy }));
+          window.setTimeout(() => {
+            setState((s) => (runId === runIdRef.current ? { ...s, extracting: false } : s));
+          }, 1200);
+        },
+      );
     });
   }, []);
 
@@ -341,26 +428,42 @@ export default function App() {
   const currentIndex = INDEX_BY_VIEW[state.view];
   const offline = state.forceFallback || state.source === 'cache';
 
-  // --- derived: per-patient monitoring trajectory --------------------------
+  // --- monitoring trajectory (computed on the backend, persisted) ----------
   // Mrs. R ships a hand-authored series; every other patient (the canned packets
-  // and live-generated/pasted ones) gets a trajectory fabricated from their own
-  // discharge vitals, so Home monitoring works for ANY patient — not just Mrs. R.
-  const trajectory = useMemo(() => {
-    if (state.packetId === 'mrs-r' || !state.record) {
-      return { series: MRS_R_SERIES, timeline: MRS_R_TIMELINE };
-    }
-    return synthesizeTrajectory(state.record);
+  // and live-generated/pasted ones) gets a trajectory synthesized from their own
+  // discharge vitals. The backend owns the synthesis; we fetch it here.
+  const [trajectory, setTrajectory] = useState<{ series: Reading[]; timeline: TimelinePoint[] }>({
+    series: MRS_R_SERIES,
+    timeline: MRS_R_TIMELINE,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    const key = state.record?.mrn || state.packetId;
+    void fetchTrajectory(key, state.packetId, state.record).then((t) => {
+      if (!cancelled) setTrajectory(t);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [state.packetId, state.record]);
 
   const monitoringName = state.record?.name ?? 'Patient';
   const monitoringMrn = state.record?.mrn ?? '—';
 
-  // --- derived: monitoring tiers (engine computes; view renders) -----------
-  // assessTrend(baselineDays = days 1–2, today) for each revealed day.
-  const baselineDays = trajectory.series.slice(0, 2);
-  const tierByDay = trajectory.series.slice(0, state.day).map((reading) =>
-    assessTrend(baselineDays, reading, state.symptomByDay[reading.day] ?? null),
-  );
+  // --- monitoring tiers (backend assesses each day's trend, persists it) ----
+  // The engine computes assessTrend(baseline = days 1–2, today) for the whole
+  // series on the server; we keep the revealed-day slice for the dashboard.
+  const [tierByDay, setTierByDay] = useState<TierResult[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const key = state.record?.mrn || state.packetId;
+    void fetchTiers(key, trajectory.series, state.symptomByDay).then((tiers) => {
+      if (!cancelled) setTierByDay(tiers.slice(0, state.day));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [trajectory.series, state.day, state.symptomByDay, state.packetId, state.record]);
 
   return (
     <main
@@ -415,6 +518,29 @@ export default function App() {
           >
             <span aria-hidden="true">{offline ? '◴' : '◉'}</span>
             {offline ? 'offline · cached' : 'live · Claude'}
+          </span>
+          <span
+            className="mono"
+            role="status"
+            title={
+              state.scoredBy === 'api'
+                ? 'Home readiness was computed by the backend clinical engine (Express + SQLite) and persisted to the database.'
+                : 'Backend API unreachable — readiness computed by the in-bundle engine fallback (identical deterministic logic).'
+            }
+            style={{
+              fontSize: '0.68rem',
+              color: state.scoredBy === 'api' ? 'var(--pass-text)' : 'var(--slate-text)',
+              background: state.scoredBy === 'api' ? 'var(--pass-bg)' : 'var(--slate-chip)',
+              border: '0.5px solid transparent',
+              borderRadius: 'var(--radius-pill)',
+              padding: '3px 10px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <span aria-hidden="true">⛁</span>
+            {state.scoredBy === 'api' ? 'scored by API' : 'scored offline'}
           </span>
           <Stepper
             steps={STEPS}

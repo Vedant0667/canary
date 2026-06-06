@@ -7,10 +7,17 @@
 import express from 'express';
 import cors from 'cors';
 import db, { ensurePatient } from './db.mjs';
+// The clinical engine — the SAME deterministic TypeScript modules the tests use,
+// imported and executed server-side (the server runs via tsx). Clinical logic
+// lives on the backend; the frontend renders what the engine returns.
+import { scoreEligibility, assessTrend } from '../src/engine/scoring.ts';
+import { synthesizeTrajectory, MRS_R_SERIES, MRS_R_TIMELINE } from '../src/data/monitoring.ts';
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+
+const nowIso = () => new Date().toISOString();
 
 const metricsStmt = db.prepare('SELECT id,label,unit,description,category,decimals FROM metrics');
 
@@ -82,6 +89,80 @@ app.put('/api/patients/:key/monitoring/config', (req, res) => {
   })();
 
   res.json({ ok: true, patientKey: key, config: clean });
+});
+
+// ── Clinical compute (engine runs here, results persisted) ─────────────────────
+
+const insRecord = db.prepare(
+  'INSERT OR REPLACE INTO patient_records (patient_key,record_json,source,created_at) VALUES (?,?,?,?)',
+);
+const insScore = db.prepare(
+  'INSERT OR REPLACE INTO readiness_scores (patient_key,overall,band,result_json,computed_at) VALUES (?,?,?,?,?)',
+);
+const insTrend = db.prepare(
+  'INSERT OR REPLACE INTO trend_assessments (patient_key,day,tier,result_json,computed_at) VALUES (?,?,?,?,?)',
+);
+
+// Home-readiness scoring. The patient record (input) is persisted, the engine
+// computes the score + k-NN case confidence, and the result is stored + returned.
+app.post('/api/patients/:key/score', (req, res) => {
+  const key = String(req.params.key);
+  const record = req.body?.record;
+  if (!record || typeof record !== 'object') {
+    return res.status(400).json({ error: 'body.record (PatientRecord) is required' });
+  }
+  try {
+    ensurePatient(key, record.name ?? 'Patient', record.mrn ?? key);
+    const score = scoreEligibility(record);
+    const ts = nowIso();
+    insRecord.run(key, JSON.stringify(record), String(req.body?.source ?? 'live'), ts);
+    insScore.run(key, score.overall, score.band, JSON.stringify(score), ts);
+    res.json({ patientKey: key, score, computedAt: ts });
+  } catch (err) {
+    console.error('[canary] score error:', err);
+    res.status(500).json({ error: 'scoring failed', detail: String(err?.message ?? err) });
+  }
+});
+
+// The home-monitoring trajectory (hospital→home arc + the 5 home readings).
+// Mrs. R ships a hand-authored series; everyone else gets one synthesized from
+// their own discharge vitals — computed by the engine, here on the backend.
+app.post('/api/patients/:key/trajectory', (req, res) => {
+  const record = req.body?.record;
+  const packetId = String(req.body?.packetId ?? '');
+  try {
+    const traj =
+      packetId === 'mrs-r' || !record
+        ? { series: MRS_R_SERIES, timeline: MRS_R_TIMELINE }
+        : synthesizeTrajectory(record);
+    res.json(traj);
+  } catch (err) {
+    console.error('[canary] trajectory error:', err);
+    res.status(500).json({ error: 'trajectory failed', detail: String(err?.message ?? err) });
+  }
+});
+
+// Daily monitoring tiers. Given the home series + provider-reported symptoms,
+// the engine assesses each day's trend tier vs the days 1–2 baseline; every day
+// is computed on the backend and stored. Returns the per-day TierResult array.
+app.post('/api/patients/:key/trends', (req, res) => {
+  const key = String(req.params.key);
+  const series = Array.isArray(req.body?.series) ? req.body.series : null;
+  const symptomByDay = req.body?.symptomByDay ?? {};
+  if (!series) return res.status(400).json({ error: 'body.series (Reading[]) is required' });
+  try {
+    const baseline = series.slice(0, 2);
+    const ts = nowIso();
+    const tiers = series.map((reading) => {
+      const result = assessTrend(baseline, reading, symptomByDay[reading.day] ?? null);
+      insTrend.run(key, reading.day, result.tier, JSON.stringify(result), ts);
+      return result;
+    });
+    res.json({ patientKey: key, tiers, computedAt: ts });
+  } catch (err) {
+    console.error('[canary] trends error:', err);
+    res.status(500).json({ error: 'trends failed', detail: String(err?.message ?? err) });
+  }
 });
 
 const PORT = process.env.PORT || 8787;

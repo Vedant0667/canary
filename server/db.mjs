@@ -52,6 +52,30 @@ db.exec(`
     cached_record TEXT NOT NULL,
     position INTEGER NOT NULL DEFAULT 0
   );
+  -- The patient record (the INPUT) that was last scored for this patient.
+  CREATE TABLE IF NOT EXISTS patient_records (
+    patient_key TEXT PRIMARY KEY,
+    record_json TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  -- Home-readiness score, COMPUTED on the backend by the clinical engine and stored.
+  CREATE TABLE IF NOT EXISTS readiness_scores (
+    patient_key TEXT PRIMARY KEY,
+    overall INTEGER NOT NULL,
+    band TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    computed_at TEXT NOT NULL
+  );
+  -- Per-day monitoring trend tier, COMPUTED on the backend (assessTrend) and stored.
+  CREATE TABLE IF NOT EXISTS trend_assessments (
+    patient_key TEXT NOT NULL,
+    day INTEGER NOT NULL,
+    tier TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    computed_at TEXT NOT NULL,
+    PRIMARY KEY (patient_key, day)
+  );
 `);
 
 // The three discharge packets (the clinical INPUTS to triage). The raw hospital

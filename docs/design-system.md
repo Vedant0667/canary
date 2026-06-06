@@ -1,4 +1,4 @@
-# Cardinal — Design System
+# Canary — Design System
 
 Source: `~/Downloads/-design-system.pdf` (provided by the team, 2026-06-05).
 
@@ -25,7 +25,7 @@ Two families plus mono. **No italics anywhere.**
 - **Mono** — Geist Mono, Regular & Medium, 11–14pt. Labels, captions, status text.
   License: free (SIL OFL). Used directly.
 
-Recoleta and Suisse are commercial; Cardinal ships their named free fallbacks
+Recoleta and Suisse are commercial; Canary ships their named free fallbacks
 (Fraunces, Geist) bundled via `@fontsource`, so the demo renders identically
 offline with no licensing exposure.
 

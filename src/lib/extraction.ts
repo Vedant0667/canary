@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-// Cardinal extraction client (PRD §3).
+// Canary extraction client (PRD §3).
 //
 // The packet carries `rawText` (the referral note) plus a hand-authored
 // `cachedRecord` that is ALWAYS a valid PatientRecord. Live extraction is a
@@ -32,7 +32,7 @@ export interface ExtractionResult {
 // Live-only extraction (used for arbitrary pasted notes that have NO cached
 // fallback). We never silently fabricate a record here: if the model can't run,
 // the caller gets an honest failure reason and shows it. This is the path that
-// proves Cardinal is genuinely AI-driven, not a lookup table.
+// proves Canary is genuinely AI-driven, not a lookup table.
 export type LiveExtraction =
   | { ok: true; record: PatientRecord }
   | { ok: false; reason: 'no_key' | 'timeout' | 'no_tool' | 'error'; message: string };
@@ -172,7 +172,7 @@ export async function extractPacket(
  *
  * Unlike {@link extractPacket} there is NO cached record to fall back to, so we
  * return an honest, typed failure instead of fabricating data. This is the path
- * a judge exercises to confirm Cardinal really runs the model: paste any note,
+ * a judge exercises to confirm Canary really runs the model: paste any note,
  * watch it become a structured record and a score.
  */
 export async function extractLive(rawText: string): Promise<LiveExtraction> {
@@ -193,7 +193,7 @@ export async function extractLive(rawText: string): Promise<LiveExtraction> {
     const record = await callExtraction(rawText, apiKey, TIMEOUT_LIVE_MS);
     return { ok: true, record };
   } catch (err) {
-    console.error('[Cardinal] extractLive failed:', err);
+    console.error('[Canary] extractLive failed:', err);
     const aborted = err instanceof Error && err.name === 'AbortError';
     if (aborted) {
       return { ok: false, reason: 'timeout', message: 'The model took too long. Try again.' };
@@ -348,7 +348,7 @@ export async function generateScenario(): Promise<ScenarioResult> {
     }
     return { ok: true, rawText: text };
   } catch (err) {
-    console.error('[Cardinal] generateScenario failed:', err);
+    console.error('[Canary] generateScenario failed:', err);
     const aborted = controller.signal.aborted || (err instanceof Error && err.name === 'AbortError');
     if (aborted) {
       return { ok: false, reason: 'timeout', message: 'Generating took too long. Try again.' };

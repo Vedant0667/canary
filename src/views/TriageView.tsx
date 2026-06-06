@@ -19,6 +19,8 @@ import {
   ThresholdLadder,
   ScoreMeter,
 } from '../components/primitives';
+import { recommendImprovements } from '../lib/recommendations';
+import type { Recommendation } from '../lib/recommendations';
 
 export type Decision = 'home' | 'admit';
 
@@ -114,7 +116,7 @@ function EhrChrome() {
           display: 'inline-block',
         }}
       />
-      Embedded in EHR · Cardinal panel · MRN 4471932
+      Embedded in EHR · Canary panel · MRN 4471932
     </div>
   );
 }
@@ -560,7 +562,7 @@ function ScoreCard({ scoreResult }: { scoreResult: ScoreResult }) {
   return (
     <div className="card-sunken cl-rise" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="mono" style={labelStyle}>
-        Home eligibility
+        Home readiness
       </div>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
         <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
@@ -829,6 +831,152 @@ function ReasoningPanel({ scoreResult }: { scoreResult: ScoreResult }) {
 }
 
 // =============================================================================
+// Recommendations (5b) — live AI checklist to improve home readiness
+// =============================================================================
+
+function RecommendationsPanel({
+  record,
+  scoreResult,
+  liveAvailable,
+}: {
+  record: PatientRecord;
+  scoreResult: ScoreResult;
+  liveAvailable: boolean;
+}) {
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [items, setItems] = useState<Recommendation[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+
+  const run = () => {
+    setStatus('loading');
+    setError(null);
+    void recommendImprovements(record, scoreResult).then((res) => {
+      if (!res.ok) {
+        setStatus('error');
+        setError(res.message);
+        return;
+      }
+      setItems(res.items);
+      setChecked(new Set());
+      setStatus('ready');
+    });
+  };
+
+  const toggle = (i: number) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+
+  const impactColor: Record<Recommendation['impact'], string> = {
+    high: 'var(--admit-text)',
+    medium: 'var(--watch-text)',
+    low: 'var(--slate-text)',
+  };
+
+  return (
+    <div
+      style={{
+        background: 'var(--card)',
+        border: '0.5px solid var(--border)',
+        borderRadius: 'var(--radius-card)',
+        padding: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <span className="mono" style={labelStyle}>
+          Improve home readiness · AI checklist
+        </span>
+        <button
+          className="btn-ghost"
+          onClick={run}
+          disabled={!liveAvailable || status === 'loading'}
+          title={
+            liveAvailable
+              ? 'Ask Claude for concrete steps to raise this readiness score'
+              : 'Set VITE_ANTHROPIC_API_KEY in .env and restart to enable'
+          }
+          style={{ padding: '6px 11px' }}
+        >
+          <span aria-hidden="true">{status === 'loading' ? '◴' : '✦'}</span>{' '}
+          {status === 'loading' ? 'Thinking…' : status === 'ready' ? 'Regenerate' : 'Suggest improvements'}
+        </button>
+      </div>
+
+      {status === 'idle' && (
+        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--muted)', lineHeight: 1.45 }}>
+          {liveAvailable
+            ? 'Claude reads the score breakdown and suggests concrete, prioritized steps to raise this patient’s readiness for home.'
+            : 'Live recommendations need an Anthropic API key (VITE_ANTHROPIC_API_KEY).'}
+        </p>
+      )}
+
+      {status === 'error' && error && (
+        <span className="mono" style={{ fontSize: '0.74rem', color: 'var(--admit-text)' }} role="status">
+          ▲ {error}
+        </span>
+      )}
+
+      {status === 'ready' &&
+        (items.length === 0 ? (
+          <span className="mono" style={{ fontSize: '0.78rem', color: 'var(--pass-text)' }}>
+            ✓ No readiness gaps to address — this patient already scores well.
+          </span>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {items.map((it, i) => (
+              <label
+                key={i}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 9,
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '0.5px solid var(--border)',
+                  background: checked.has(i) ? 'var(--pass-bg)' : 'var(--page)',
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked.has(i)}
+                  onChange={() => toggle(i)}
+                  style={{ marginTop: 2, accentColor: 'var(--slate)' }}
+                />
+                <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+                  <span
+                    style={{
+                      fontSize: '0.84rem',
+                      color: 'var(--ink)',
+                      textDecoration: checked.has(i) ? 'line-through' : 'none',
+                      opacity: checked.has(i) ? 0.6 : 1,
+                    }}
+                  >
+                    {it.action}
+                  </span>
+                  <span className="mono" style={{ fontSize: '0.62rem', color: 'var(--muted)' }}>
+                    <span style={{ color: impactColor[it.impact] }}>{it.impact} impact</span> · {it.addresses}
+                  </span>
+                </span>
+              </label>
+            ))}
+            <span className="mono" style={{ fontSize: '0.62rem', color: 'var(--muted)' }}>
+              Generated live by Claude from the score breakdown · {checked.size}/{items.length} done
+            </span>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+// =============================================================================
 // Action row (6) — EQUAL WEIGHT, two identical outline buttons
 // =============================================================================
 
@@ -1032,7 +1180,7 @@ export default function TriageView({
                 ? 'Generating a new patient, then scoring…'
                 : extracting
                   ? 'Scoring once intake completes…'
-                  : 'Select a packet to compute home eligibility.'}
+                  : 'Select a packet to compute home readiness.'}
             </div>
           ) : (
             <>
@@ -1045,6 +1193,14 @@ export default function TriageView({
               </div>
 
               <ReasoningPanel scoreResult={scoreResult} />
+
+              {record && (
+                <RecommendationsPanel
+                  record={record}
+                  scoreResult={scoreResult}
+                  liveAvailable={liveAvailable}
+                />
+              )}
 
               <ActionRow
                 scoreResult={scoreResult}

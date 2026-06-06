@@ -15,7 +15,7 @@ export interface MetricDef {
   decimals: number;
 }
 export interface SeriesPoint {
-  day: number;
+  t: number; // 0..8 timeline index (4 hospital + 5 home), matches the chart arc
   value: number;
 }
 

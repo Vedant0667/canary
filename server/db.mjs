@@ -1,4 +1,4 @@
-// Cardinal — home-monitoring backend datastore (SQLite via better-sqlite3).
+// Canary — home-monitoring backend datastore (SQLite via better-sqlite3).
 //
 // Holds the configurable monitoring layer the clinician customizes per patient:
 //  - metrics:        the catalog of datasets a clinician can choose to monitor
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const db = new Database(join(__dirname, 'cardinal.db'));
+const db = new Database(join(__dirname, 'canary.db'));
 db.pragma('journal_mode = WAL');
 
 db.exec(`
@@ -39,9 +39,9 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS metric_series (
     patient_key TEXT NOT NULL,
     metric_id TEXT NOT NULL,
-    day INTEGER NOT NULL,
+    t INTEGER NOT NULL,
     value REAL NOT NULL,
-    PRIMARY KEY (patient_key, metric_id, day)
+    PRIMARY KEY (patient_key, metric_id, t)
   );
 `);
 
@@ -67,7 +67,8 @@ for (const m of METRICS) insMetric.run(m.id, m.label, m.unit, m.description, m.c
 // Default datasets a new patient is monitored on (drag-and-drop edits this).
 export const DEFAULT_MONITORED = ['weight_lb', 'spo2_pct', 'hr_bpm', 'edema_score'];
 
-// Deterministic synthetic 5-day series for (patient, metric) — stable per key.
+// Deterministic synthetic FULL trajectory (hospital → home) for (patient, metric).
+// t = 0..8: 4 hospital points (elevated, settling) + 5 home days. Stable per key.
 function hash01(str) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
@@ -76,15 +77,19 @@ function hash01(str) {
   }
   return (h >>> 0) / 4294967296;
 }
-function genSeries(patientKey, m) {
+function genTimeline(patientKey, m) {
   const phase = hash01(patientKey + '|' + m.id) * Math.PI * 2;
   const out = [];
-  for (let day = 1; day <= 5; day++) {
-    const wobble = Math.sin(day * 0.9 + phase);
-    const noise = (hash01(`${patientKey}|${m.id}|${day}`) - 0.5) * 0.6;
-    let v = m.base + m.amp * (0.4 * wobble + noise) + (day - 3) * m.amp * 0.12;
+  for (let t = 0; t <= 8; t++) {
+    const isHosp = t < 4;
+    const homeDay = t - 3; // 1..5 for the home points
+    const hosp = isHosp ? ((4 - t) / 4) * m.amp * 1.3 : 0; // elevated in hospital, settles by discharge
+    const wobble = Math.sin(t * 0.7 + phase);
+    const noise = (hash01(`${patientKey}|${m.id}|${t}`) - 0.5) * 0.5;
+    const homeDrift = isHosp ? 0 : (homeDay - 3) * m.amp * 0.12;
+    let v = m.base + hosp + m.amp * (0.35 * wobble + noise) + homeDrift;
     v = m.decimals ? Math.round(v * 10) / 10 : Math.round(v);
-    out.push({ day, value: v });
+    out.push({ t, value: v });
   }
   return out;
 }
@@ -102,9 +107,9 @@ export function ensurePatient(key, name = 'Patient', mrn = null) {
 
   const serCount = db.prepare('SELECT COUNT(*) c FROM metric_series WHERE patient_key=?').get(key).c;
   if (!serCount) {
-    const ins = db.prepare('INSERT OR IGNORE INTO metric_series (patient_key,metric_id,day,value) VALUES (?,?,?,?)');
+    const ins = db.prepare('INSERT OR IGNORE INTO metric_series (patient_key,metric_id,t,value) VALUES (?,?,?,?)');
     const tx = db.transaction(() => {
-      for (const m of METRICS) for (const pt of genSeries(key, m)) ins.run(key, m.id, pt.day, pt.value);
+      for (const m of METRICS) for (const pt of genTimeline(key, m)) ins.run(key, m.id, pt.t, pt.value);
     });
     tx();
   }

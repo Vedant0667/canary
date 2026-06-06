@@ -1,4 +1,4 @@
-// Cardinal — Eligibility Scoring Engine.
+// Canary — Eligibility Scoring Engine.
 // Pure, deterministic, zero runtime imports. Implements careloop-scoring-spec.md §3–§12.
 // The UI never computes clinically; it only renders the ScoreResult / TierResult produced here.
 

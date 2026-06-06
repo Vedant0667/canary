@@ -1,6 +1,6 @@
-# Cardinal — Judging Guide
+# Canary — Judging Guide
 
-This doc maps the Cardinal demo to the hackathon rubric and arms the team to present and defend it.
+This doc maps the Canary demo to the hackathon rubric and arms the team to present and defend it.
 It is honest about what is real and what is canned, because the judges will check.
 
 Numbers that are not computed by the app are labeled ASSUMPTION. Do not present them as hard facts.
@@ -12,7 +12,7 @@ Numbers that are not computed by the app are labeled ASSUMPTION. Do not present 
 Hospitals and home-care agencies run on systems that do not talk to each other, so the decision to
 send a stable congestive heart failure (CHF) patient home is made under time pressure with scattered
 paperwork, and the gap between "stable enough for home" and "needs admit" is exactly where mistakes
-and readmissions happen. Cardinal is a CHF hospital-at-home decision tool embedded in the EHR. It
+and readmissions happen. Canary is a CHF hospital-at-home decision tool embedded in the EHR. It
 reads a free-text discharge referral with Claude, runs a deterministic and auditable eligibility
 engine that returns Home / Watch / Admit with every number traceable to a threshold, hands off a
 FHIR continuity record to the home EHR so nothing is re-collected or re-ordered, and then monitors
@@ -90,7 +90,7 @@ Use of AI Appropriateness — the split is the whole argument
   physician decides." This line is printed on screen in the AI intake panel.
 
 Workflow Integration
-- The triage view renders inside an EHR chrome bar ("Embedded in EHR · Cardinal panel · MRN
+- The triage view renders inside an EHR chrome bar ("Embedded in EHR · Canary panel · MRN
   4471932"). It is designed to live where the clinician already works, not as a separate portal.
 - The hand-off produces real FHIR R4 resource shapes (Patient, Condition I50.9, MedicationStatement,
   Observation, DiagnosticReport, CarePlan) and populates a deliberately different-looking "Accura
@@ -106,11 +106,11 @@ Outcome Impact
 ## 4. Differentiation and innovation (Round 1)
 
 Signature insight — the day-4 converging trend
-- On day 4 of home monitoring, Cardinal flips Mrs. R to Yellow even though every single vital is
+- On day 4 of home monitoring, Canary flips Mrs. R to Yellow even though every single vital is
   still inside its individual safe range. The engine (`assessTrend` in `src/engine/scoring.ts`)
   fires on a composite: weight up >= 3 lb vs baseline AND (SpO2 down >= 2 OR HR up >= 10). The
   on-screen caption is the punchline: "No single-threshold alarm would have fired yet — this is
-  forecast, not alert." This is the moment that separates Cardinal from every threshold-alarm
+  forecast, not alert." This is the moment that separates Canary from every threshold-alarm
   monitoring product.
 
 Architectural differentiator — live extract, then deterministic score
@@ -120,7 +120,7 @@ Architectural differentiator — live extract, then deterministic score
   the other (a pure-LLM tool is unauditable; a pure-rules tool cannot read prose).
 
 Value proposition in one sentence
-- Cardinal is the bridge between the hospital and the home EHR: it reads the packet, makes a
+- Canary is the bridge between the hospital and the home EHR: it reads the packet, makes a
   transparent call, carries the record across without re-collection, and forecasts decompensation
   before it becomes an emergency.
 
@@ -146,7 +146,7 @@ Triage view (Functionality + Problem Alignment)
   a visible audit line. The trust footer reads "Decision support · the physician decides."
 
 Hand-off view (Problem Alignment + UX)
-- Left side is the Cardinal continuity record as a collapsible FHIR tree, with a "view raw FHIR"
+- Left side is the Canary continuity record as a collapsible FHIR tree, with a "view raw FHIR"
   toggle for Q&A. The echocardiogram is flagged as travelling with the patient, not re-run.
 - Press Send: fields animate across into the grayer "Accura Home Health" intake, which auto-populates
   to "Intake complete · 0 fields re-collected · 0 studies re-ordered." Caption: "today, this hand-off
@@ -293,5 +293,5 @@ cached extractions and is visually identical, which is by design for the unkilla
   hard facts unless you have verified them. Use them as labeled assumptions or directional framing.
 - The day-4 monitoring series is scripted sample data, not real patient telemetry. The engine logic
   on top of it is real; the data feeding it is a demo fixture.
-- Cardinal is decision support, never autonomy. The physician decides, every action is logged, red
+- Canary is decision support, never autonomy. The physician decides, every action is logged, red
   flags short-circuit to Admit, and the engine fails toward Admit on missing data.

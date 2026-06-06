@@ -6,7 +6,7 @@
 
 import { useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import type { MetricDef, SeriesPoint } from '../lib/useMonitoring';
+import type { MetricDef } from '../lib/useMonitoring';
 
 const labelStyle: CSSProperties = {
   fontSize: '0.66rem',
@@ -210,58 +210,6 @@ export function DatasetConfigurator({
           })}
         </div>
       </div>
-    </div>
-  );
-}
-
-// A compact trend chart for a configured non-core dataset (sodium, edema, etc.),
-// rendered in DashboardView's chart grid alongside the rich core-vital charts.
-export function SimpleMetricChart({
-  label,
-  unit,
-  decimals,
-  series,
-}: {
-  label: string;
-  unit: string;
-  decimals: number;
-  series: SeriesPoint[];
-}) {
-  const latest = series.length ? series[series.length - 1].value : null;
-  const W = 340;
-  const H = 122;
-  const padX = 12;
-  const padY = 20;
-  const vals = series.map((p) => p.value);
-  const lo = series.length ? Math.min(...vals) : 0;
-  const hi = series.length ? Math.max(...vals) : 1;
-  const span = hi - lo || 1;
-  const x = (i: number) => (series.length <= 1 ? W / 2 : padX + (i / (series.length - 1)) * (W - 2 * padX));
-  const y = (v: number) => H - padY - ((v - lo) / span) * (H - 2 * padY - 4);
-  const d = series.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
-
-  return (
-    <div className="card-sunken" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-        <span className="mono" style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
-          {label}
-        </span>
-        <span className="mono" style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--ink)' }}>
-          {latest != null ? `${latest}${unit === '%' ? '' : ' '}${unit}` : '—'}
-        </span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label={`${label} trend`}>
-        <path d={d} fill="none" stroke="var(--slate)" strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
-        {series.map((p, i) => (
-          <g key={p.day}>
-            <circle cx={x(i)} cy={y(p.value)} r={i === series.length - 1 ? 3.2 : 2.4} fill="var(--slate)" />
-            <text x={x(i)} y={H - 6} textAnchor="middle" className="mono" fontSize={7} fill="var(--muted)">
-              d{p.day}
-            </text>
-          </g>
-        ))}
-        <title>{series.map((p) => `d${p.day}: ${p.value.toFixed(decimals)} ${unit}`).join('  ')}</title>
-      </svg>
     </div>
   );
 }

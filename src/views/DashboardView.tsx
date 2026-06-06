@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import type { Reading, Tier, TierResult, Dyspnea } from '../types';
 import { Chip, TierDot } from '../components/primitives';
-import { DatasetConfigurator, SimpleMetricChart } from './MonitoredDatasets';
+import { DatasetConfigurator } from './MonitoredDatasets';
 import { useMonitoring } from '../lib/useMonitoring';
 import {
   ADMITTED_INDEX,
@@ -115,8 +115,6 @@ export default function DashboardView({
   // --- Full trajectory (hospital → discharge → home) for the charts ---------
   // Hospital points are always shown; home points reveal with `day`.
   const revealedCount = HOME_START_INDEX + day;
-  const fullLen = timeline.length;
-  const points = timeline.slice(0, revealedCount);
   const dayFourIndex = HOME_START_INDEX + 3; // home day 4
 
   // Clickable point selection, synchronized across the three charts. Following the
@@ -315,27 +313,55 @@ export default function DashboardView({
           />
         )}
 
-        {/* Config-driven chart grid — renders exactly the monitored datasets, in order.
-            Core vitals (weight/SpO₂/HR) show the rich hospital→home trajectory; other
-            datasets render as compact trend charts from the monitoring database. */}
+        {/* Config-driven chart grid — every monitored dataset renders the SAME rich
+            hospital→home chart. Core vitals come from the trajectory; all other
+            datasets come from the monitoring database (server/, not hardcoded here). */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
           {displayedMetrics.map((id) => {
-            if (id === 'weight_lb')
-              return (
-                <TrendChart key={id} title="Weight" unit="lb" metric="weight_lb" points={points} timeline={timeline} fullLen={fullLen} baseline={wBase} margin={3} dayFourIndex={dayFourIndex} selectedIndex={selectedIndex} onSelect={setPinned} decimals={1} />
-              );
-            if (id === 'spo2_pct')
-              return (
-                <TrendChart key={id} title="SpO₂" unit="%" metric="spo2_pct" points={points} timeline={timeline} fullLen={fullLen} baseline={sBase} margin={2} dayFourIndex={dayFourIndex} selectedIndex={selectedIndex} onSelect={setPinned} />
-              );
-            if (id === 'hr_bpm')
-              return (
-                <TrendChart key={id} title="Heart rate" unit="bpm" metric="hr_bpm" points={points} timeline={timeline} fullLen={fullLen} baseline={hBase} margin={10} dayFourIndex={dayFourIndex} selectedIndex={selectedIndex} onSelect={setPinned} />
-              );
-            const m = monitoring.metricById[id];
-            if (!m) return null;
+            const coreBaseline: Partial<Record<Metric, number>> = { weight_lb: wBase, spo2_pct: sBase, hr_bpm: hBase };
+            let full: ChartPoint[];
+            let title: string;
+            let unit: string;
+            let margin: number;
+            let decimals: number;
+            let baseline: number;
+
+            if (id === 'weight_lb' || id === 'spo2_pct' || id === 'hr_bpm') {
+              const cfg = CORE_CHART[id];
+              full = timeline.map((tp) => ({ t: tp.t, label: tp.label, phase: tp.phase, value: tp[id] }));
+              title = cfg.title;
+              unit = cfg.unit;
+              margin = cfg.margin;
+              decimals = cfg.decimals;
+              baseline = coreBaseline[id] ?? 0;
+            } else {
+              const m = monitoring.metricById[id];
+              if (!m) return null;
+              const valueByT = new Map((monitoring.series[id] ?? []).map((p) => [p.t, p.value]));
+              full = TIMELINE_STRUCTURE.map((s) => ({ ...s, value: valueByT.get(s.t) ?? 0 }));
+              title = m.label;
+              unit = m.unit;
+              decimals = m.decimals;
+              baseline = ((valueByT.get(4) ?? 0) + (valueByT.get(5) ?? 0)) / 2;
+              const vals = full.map((p) => p.value);
+              margin = Math.max(m.decimals ? 0.3 : 1, (Math.max(...vals) - Math.min(...vals)) * 0.18);
+            }
+
             return (
-              <SimpleMetricChart key={id} label={m.label} unit={m.unit} decimals={m.decimals} series={monitoring.series[id] ?? []} />
+              <TrendChart
+                key={id}
+                title={title}
+                unit={unit}
+                points={full.slice(0, revealedCount)}
+                timeline={full}
+                fullLen={full.length}
+                baseline={baseline}
+                margin={margin}
+                dayFourIndex={dayFourIndex}
+                selectedIndex={selectedIndex}
+                onSelect={setPinned}
+                decimals={decimals}
+              />
             );
           })}
         </div>
@@ -511,6 +537,27 @@ function MetricCard({
 
 type Metric = 'weight_lb' | 'spo2_pct' | 'hr_bpm';
 
+// The 9-point hospital→home structure shared by every chart (matches the backend
+// `t` index and the trajectory timeline). Used to label/locate any dataset's points.
+const TIMELINE_STRUCTURE: { t: number; label: string; phase: 'hospital' | 'home' }[] = [
+  { t: 0, label: 'Adm', phase: 'hospital' },
+  { t: 1, label: 'H2', phase: 'hospital' },
+  { t: 2, label: 'H3', phase: 'hospital' },
+  { t: 3, label: 'H4', phase: 'hospital' },
+  { t: 4, label: 'D1', phase: 'home' },
+  { t: 5, label: 'D2', phase: 'home' },
+  { t: 6, label: 'D3', phase: 'home' },
+  { t: 7, label: 'D4', phase: 'home' },
+  { t: 8, label: 'D5', phase: 'home' },
+];
+
+// Display config for the three core vitals (rendered from the trajectory).
+const CORE_CHART: Record<Metric, { title: string; unit: string; margin: number; decimals: number }> = {
+  weight_lb: { title: 'Weight', unit: 'lb', margin: 3, decimals: 1 },
+  spo2_pct: { title: 'SpO₂', unit: '%', margin: 2, decimals: 0 },
+  hr_bpm: { title: 'Heart rate', unit: 'bpm', margin: 10, decimals: 0 },
+};
+
 function Readout({ label, value }: { label: string; value: string }) {
   return (
     <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 1 }}>
@@ -546,10 +593,17 @@ function MarkerSwatch() {
 // Interactive trend chart: full hospital→home arc, clickable points, admitted /
 // sent-home reference lines, and the home-baseline band. Y-axis is scaled over the
 // FULL timeline so it stays stable as days reveal.
+// One chart point along the hospital→home arc, for any dataset.
+export interface ChartPoint {
+  t: number;
+  label: string;
+  phase: 'hospital' | 'home';
+  value: number;
+}
+
 function TrendChart({
   title,
   unit,
-  metric,
   points,
   timeline,
   fullLen,
@@ -562,9 +616,8 @@ function TrendChart({
 }: {
   title: string;
   unit: string;
-  metric: Metric;
-  points: TimelinePoint[];
-  timeline: TimelinePoint[]; // full arc — for a stable y-scale as days reveal
+  points: ChartPoint[];
+  timeline: ChartPoint[]; // full arc — for a stable y-scale as days reveal
   fullLen: number;
   baseline: number;
   margin: number;
@@ -584,7 +637,7 @@ function TrendChart({
   const plotBottom = H - padB;
 
   // Stable Y scale over the whole timeline + the baseline band edges.
-  const all = timeline.map((p) => p[metric]);
+  const all = timeline.map((p) => p.value);
   const lo = Math.min(...all, baseline - margin);
   const hi = Math.max(...all, baseline + margin);
   const pad = (hi - lo) * 0.12 || 1;
@@ -595,10 +648,10 @@ function TrendChart({
   const y = (v: number) => plotBottom - ((v - yMin) / (yMax - yMin)) * (plotBottom - plotTop);
 
   const line = points
-    .map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p[metric]).toFixed(1)}`)
+    .map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`)
     .join(' ');
 
-  const selVal = points[selectedIndex]?.[metric];
+  const selVal = points[selectedIndex]?.value;
 
   return (
     <div className="card-sunken" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -663,7 +716,7 @@ function TrendChart({
         {/* points + hit targets */}
         {points.map((p, i) => {
           const cx = x(i);
-          const cy = y(p[metric]);
+          const cy = y(p.value);
           const isHome = p.phase === 'home';
           const isDay4 = p.t === dayFourIndex;
           const isSel = i === selectedIndex;
@@ -683,7 +736,7 @@ function TrendChart({
                 strokeWidth={1}
               />
               <circle cx={cx} cy={cy} r={12} fill="transparent">
-                <title>{`${p.full}: ${p[metric].toFixed(decimals)} ${unit}`}</title>
+                <title>{`${p.label}: ${p.value.toFixed(decimals)} ${unit}`}</title>
               </circle>
             </g>
           );

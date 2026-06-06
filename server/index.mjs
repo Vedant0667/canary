@@ -1,4 +1,4 @@
-// Cardinal — home-monitoring backend API (Express + SQLite).
+// Canary — home-monitoring backend API (Express + SQLite).
 //
 // Serves the configurable monitoring layer: the dataset catalog, each patient's
 // chosen (drag-and-drop ordered) datasets, and the per-metric time series. The
@@ -20,7 +20,7 @@ app.get('/api/health', (_req, res) => {
     patients: db.prepare('SELECT COUNT(*) c FROM patients').get().c,
     series_rows: db.prepare('SELECT COUNT(*) c FROM metric_series').get().c,
   };
-  res.json({ ok: true, service: 'cardinal-monitor', db: counts });
+  res.json({ ok: true, service: 'canary-monitor', db: counts });
 });
 
 // The full catalog of datasets a clinician can choose to monitor.
@@ -40,10 +40,10 @@ app.get('/api/patients/:key/monitoring', (req, res) => {
     .map((r) => r.metric_id);
 
   const seriesRows = db
-    .prepare('SELECT metric_id, day, value FROM metric_series WHERE patient_key=? ORDER BY metric_id, day')
+    .prepare('SELECT metric_id, t, value FROM metric_series WHERE patient_key=? ORDER BY metric_id, t')
     .all(key);
   const series = {};
-  for (const r of seriesRows) (series[r.metric_id] ??= []).push({ day: r.day, value: r.value });
+  for (const r of seriesRows) (series[r.metric_id] ??= []).push({ t: r.t, value: r.value });
 
   res.json({ patientKey: key, config, metrics: metricsStmt.all(), series });
 });
@@ -69,5 +69,5 @@ app.put('/api/patients/:key/monitoring/config', (req, res) => {
 
 const PORT = process.env.PORT || 8787;
 app.listen(PORT, () => {
-  console.log(`[cardinal] monitor API → http://localhost:${PORT}  (GET /api/health)`);
+  console.log(`[canary] monitor API → http://localhost:${PORT}  (GET /api/health)`);
 });

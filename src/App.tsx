@@ -1,4 +1,4 @@
-// Cardinal — integration shell.
+// Canary — integration shell.
 // Owns the single DemoState, calls the clinical engine (the ONLY place clinical
 // functions run), and wires the three pure views behind a top stepper.
 // "UI never computes clinically" — views receive ScoreResult / TierResult as props.
@@ -78,7 +78,7 @@ export default function App() {
     handoffSent: false,
     day: 1,
     forceFallback: false,
-    view: 'triage',
+    view: 'monitoring', // open straight to Home monitoring (dev/demo convenience)
     decisions: {},
     intervention: null,
     extracting: true,
@@ -314,10 +314,9 @@ export default function App() {
   const decisionLog = decision ? DECISION_LOG[decision] : null;
   const anyDecided = Object.keys(state.decisions).length > 0;
 
-  // Hand-off unlocks when this patient is accepted home; Monitoring after Send.
-  let unlockedCount = 1;
-  if (decision === 'home') unlockedCount = 2;
-  if (state.handoffSent) unlockedCount = 3;
+  // All three steps are freely navigable (we open on Home monitoring), so the
+  // stepper doubles as a way to jump straight to any view.
+  const unlockedCount = STEPS.length;
 
   const currentIndex = INDEX_BY_VIEW[state.view];
   const offline = state.forceFallback || state.source === 'cache';
@@ -366,7 +365,7 @@ export default function App() {
       >
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
           <h1 className="display" style={{ margin: 0, fontSize: '1.5rem', lineHeight: 1 }}>
-            Cardinal
+            Canary
           </h1>
           <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
             CHF hospital-at-home

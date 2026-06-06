@@ -1,6 +1,6 @@
-# Cardinal — Hackathon Demo PRD
+# Canary — Hackathon Demo PRD
 
-**What:** single-page web app demoing the full Cardinal loop on one patient story.
+**What:** single-page web app demoing the full Canary loop on one patient story.
 **Companion file:** `careloop-scoring-spec.md` — the complete scoring engine spec (gates, thresholds, schemas, test cases). This PRD references it as **[SCORING]**; build that module first, exactly as written there.
 **Source of truth for concept:** team docs `00`–`08` (esp. `07-mvp-and-roadmap.md` for scope discipline, `08-design.md` for visuals).
 
@@ -42,7 +42,7 @@ Top nav = three steps styled as a stepper: **① Triage → ② Hand-off → ③
 
 Layout per `08-design.md` §7.1 (EHR-embedded panel):
 
-1. **EHR chrome bar** — ink-black bar, mono caption `Embedded in EHR · Cardinal panel · MRN 4471932`. Sells "lives where the clinician works."
+1. **EHR chrome bar** — ink-black bar, mono caption `Embedded in EHR · Canary panel · MRN 4471932`. Sells "lives where the clinician works."
 2. **Packet intake** — left rail with the three test packets (`Mrs. R`, `Mr. D`, `Ms. K`) as selectable documents rendered to look like a hospital flowsheet (mono table of vitals, med list, home-intake form). Selecting one triggers extraction: a brief field-by-field populate animation (~1.5s, staggered) into a structured panel — name, vitals, devices, home factors appearing as typed chips. This is the AI moment; label it `AI intake · Claude reads the packet — rules make the recommendation`.
 3. **Score card** — sunken card: mono label `HOME ELIGIBILITY`, 54px score, band pill (Eligible/Watch/Admit in functional colors), confidence expander (completeness %, simulated certainty + case-similarity rows per [SCORING] §7).
 4. **Three gate rows** — A Clinical stability, B Monitoring feasibility, C Home readiness. Each: status icon + mono score + chevron. Expanding shows the `contributions` records from `ScoreResult` — every signal with value, range status chip, and note. Gate with dominant deduction defaults open.
@@ -56,8 +56,8 @@ Red-flag case (Ms. K): score card shows Admit band, a flag banner names RF1 (`Sp
 
 Split screen:
 
-- **Left — Cardinal bundle:** after Accept, show the Continuity Record as a collapsible JSON tree styled cleanly — actual FHIR resource names: `Patient`, `Condition (I50.9)`, `MedicationStatement[]`, `Observation[]` (the vitals), `DiagnosticReport (Echocardiogram — REFERENCE, not re-ordered)`, `CarePlan`. The echo line gets a highlight chip: `travels with patient — not re-run`.
-- **Right — "Accura Home Health — intake" mock:** deliberately plainer/grayer generic-EMR styling (visually NOT Cardinal — sells that these are two different systems). Empty intake form fields.
+- **Left — Canary bundle:** after Accept, show the Continuity Record as a collapsible JSON tree styled cleanly — actual FHIR resource names: `Patient`, `Condition (I50.9)`, `MedicationStatement[]`, `Observation[]` (the vitals), `DiagnosticReport (Echocardiogram — REFERENCE, not re-ordered)`, `CarePlan`. The echo line gets a highlight chip: `travels with patient — not re-run`.
+- **Right — "Accura Home Health — intake" mock:** deliberately plainer/grayer generic-EMR styling (visually NOT Canary — sells that these are two different systems). Empty intake form fields.
 - **Send button** → animated transfer (fields fly/fade across, ~2s) → right side auto-populates field by field → green check `Intake complete · 0 fields re-collected · 0 studies re-ordered`. Caption underneath: `today, this hand-off is a fax and a phone call`.
 - A small `view raw FHIR` toggle for judge Q&A credibility.
 

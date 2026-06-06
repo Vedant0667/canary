@@ -1,5 +1,5 @@
 // View ② — Hand-off (PRD §4 View 2 / design §4 HandoffViewProps).
-// Pure renderer: shows the Cardinal Continuity Record (real FHIR resource
+// Pure renderer: shows the Canary Continuity Record (real FHIR resource
 // names, built from `record`) on the LEFT, and a deliberately plainer/grayer
 // generic-EMR "Accura Home Health — intake" mock on the RIGHT. Send animates a
 // transfer; the right side auto-populates field by field; nothing is re-collected,
@@ -372,7 +372,7 @@ function ContinuityRecord({
 // ---------------------------------------------------------------------------
 // Accura Home Health intake (RIGHT) — deliberately plainer / grayer generic-EMR.
 // Hard-coded neutral grays here are intentional system-differentiation, NOT a
-// clinical tier (those stay slate/tier-only on the Cardinal side).
+// clinical tier (those stay slate/tier-only on the Canary side).
 // ---------------------------------------------------------------------------
 
 const EMR_BORDER = '#cfcabf';
@@ -527,12 +527,12 @@ function TransferBeam({ active }: { active: boolean }) {
             height: 7,
             borderRadius: '50%',
             background: 'var(--slate)',
-            animation: `cardinal-fly 1.05s ${i * 0.12}s var(--ease-out) infinite`,
+            animation: `canary-fly 1.05s ${i * 0.12}s var(--ease-out) infinite`,
           }}
         />
       ))}
       <style>{`
-        @keyframes cardinal-fly {
+        @keyframes canary-fly {
           0%   { transform: translateX(0) scale(0.7); opacity: 0; }
           12%  { opacity: 0.95; }
           80%  { opacity: 0.95; }

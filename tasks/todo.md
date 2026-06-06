@@ -1,4 +1,4 @@
-# Cardinal (was CareLoop) — Redesign + De-hardcode + Rename
+# Canary (was CareLoop) — Redesign + De-hardcode + Rename
 
 Source of truth: PRD + scoring-spec in `docs/`. New design system: `docs/design-system.md`
 (from `~/Downloads/-design-system.pdf`). Judging rubric: `docs/judging-criteria.md`.
@@ -7,7 +7,7 @@ Source of truth: PRD + scoring-spec in `docs/`. New design system: `docs/design-
 Prep meeting feedback:
 1. Judges will run the demo "through AI" to confirm it actually works and isn't fully
    hardcoded. Some canned data is fine; the AI + engine path must be genuinely live.
-2. Rename the product **CareLoop → Cardinal**.
+2. Rename the product **CareLoop → Canary**.
 3. Redesign around the provided design system (Cream/Ink/Stone/Slate; Recoleta→Fraunces
    display, Suisse→Geist body, Geist Mono; no italics; cream bg).
 4. Still: superpowers spec + subagents, impeccable for design, todo + lessons.
@@ -22,9 +22,9 @@ Prep meeting feedback:
 ### Phase 0 — Foundation (orchestrator, blocking) [~]
 - [x] Install @fontsource Fraunces(variable)/Geist/Geist-mono
 - [ ] `src/styles/fonts.css` (latin subsets) + import in main.tsx
-- [ ] tokens.css: body font → Geist, display Fraunces 500, header → Cardinal (palette already on-system)
-- [ ] index.html: title/meta → Cardinal, drop Google Fonts CDN (now bundled)
-- [ ] package.json name → cardinal
+- [ ] tokens.css: body font → Geist, display Fraunces 500, header → Canary (palette already on-system)
+- [ ] index.html: title/meta → Canary, drop Google Fonts CDN (now bundled)
+- [ ] package.json name → canary
 - [ ] Capture design-system.md + judging-criteria.md into docs/
 
 ### Phase 1 — De-hardcode core (orchestrator, blocking)

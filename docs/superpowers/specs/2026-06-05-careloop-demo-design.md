@@ -1,4 +1,4 @@
-# Cardinal Demo — Architecture & Build Contract
+# Canary Demo — Architecture & Build Contract
 
 **Status:** approved basis is the team's committed PRD (`careloop-demo-prd.md`) +
 scoring spec (`careloop-scoring-spec.md`). This doc is the *implementation* design:

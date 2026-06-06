@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import type { Reading, Tier, TierResult, Dyspnea } from '../types';
 import { Chip, TierDot } from '../components/primitives';
+import MonitoredDatasets from './MonitoredDatasets';
 import {
   ADMITTED_INDEX,
   SENT_HOME_INDEX,
@@ -347,6 +348,13 @@ export default function DashboardView({
           <Legend swatch={<span style={{ width: 14, height: 8, background: 'var(--pass-bg)', borderRadius: 2, display: 'inline-block' }} />} label="days 1–2 baseline band" />
         </div>
       </section>
+
+      {/* Configurable monitoring datasets (drag-and-drop, backed by the SQLite API).
+          Self-contained + fail-safe: hides itself if the backend isn't running. */}
+      <MonitoredDatasets
+        patientKey={patientMrn && patientMrn !== '—' ? patientMrn : 'demo'}
+        patientName={patientName}
+      />
 
       {/* Daily symptom check-in — the home-care provider reports symptoms each day.
           The answer feeds the engine's trend tier (assessTrend), so symptoms can

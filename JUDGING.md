@@ -257,6 +257,19 @@ cached extractions and is visually identical, which is by design for the unkilla
 
 ## 7. Productization and scalability (Round 2, brief)
 
+- Backend + database (real). `server/` is an Express + SQLite (`better-sqlite3`) service for the
+  home-monitoring layer: tables `metrics` (the dataset catalog), `monitor_config` (each patient's
+  chosen, ordered datasets), and `metric_series` (per-patient values). Endpoints: `GET /api/metrics`,
+  `GET /api/patients/:key/monitoring`, `PUT /api/patients/:key/monitoring/config`,
+  `GET /api/health`. The React app reaches it through the Vite proxy (`/api/*`). Run both with
+  `npm run dev:all` (or `npm run server` alongside `npm run dev`). Data is synthetic but it is a real,
+  queryable database, not an in-browser array. The section degrades gracefully: if the backend is
+  down, the configurable panel hides and the core demo is unaffected.
+- Configurable monitoring (drag-and-drop). On the Home-monitoring view, the clinician drag-and-drops
+  which datasets they track for a patient (weight, SpO₂, edema score, sodium intake, med adherence,
+  etc.) — add, remove, reorder — persisted per patient to the database. This is the "configuration
+  over customization" pillar made real: different practitioners track different datasets for the same
+  condition without a code change.
 - Configuration over customization. The clinical thresholds and gate weights are data in
   `src/engine/scoring.ts`, not bespoke logic per client. A new health system tunes values, it does
   not get a code rewrite.

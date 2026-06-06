@@ -30,3 +30,7 @@ dist-ssr
 # Python hook caches
 __pycache__/
 *.pyc
+
+# Local SQLite database (seeded on server start)
+server/*.db
+server/*.db-*

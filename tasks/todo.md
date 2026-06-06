@@ -111,6 +111,17 @@ claim — currently aspirational, not real. A medically/technically literate jud
 scoring.ts will see the contradiction.
 
 Options:
+### UPDATE 2026-06-06 — Option B STARTED (backend + drag-and-drop datasets shipped)
+- [x] Real backend: `server/` Express + SQLite (better-sqlite3). Tables metrics /
+      monitor_config / metric_series. Endpoints /api/metrics, /api/patients/:key/monitoring
+      (GET), /api/patients/:key/monitoring/config (PUT), /api/health. Vite proxy /api → :8787.
+      `npm run dev:all` runs web+api; `npm run dev` (vite only) unchanged as safe fallback.
+- [x] Drag-and-drop configurable monitoring datasets in DashboardView (MonitoredDatasets.tsx) —
+      add/remove/reorder which datasets a patient is monitored on; persisted per patient to SQLite.
+      Synthetic series. Fail-safe: hides if backend offline so the core demo never breaks.
+- [x] Lazy patient creation (any key gets default config + series). Mrs. R seeded (mrn 4471932).
+- [ ] Still TODO for full Option B: make the scoring-engine thresholds genuinely config-driven
+      (currently still inline in scoring.ts); wire the configured dataset set into the engine.
 - [ ] (A) Round 1: keep as roadmap narrative; be upfront it's not built. (lowest effort, honest)
 - [ ] (B) Pre-Round-2: build a minimal REAL config — a "tracked fields" toggle so the
       monitoring dashboard watches a configurable signal set; demo Practitioner A
